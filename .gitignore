@@ -1,0 +1,6 @@
+# Ignore the compiled file
+server
+
+# Ignore any text editor backups
+*~
+*.swp
