@@ -143,7 +143,7 @@ char * publicFilePath(char* file) {
 }
 
 // parse a HTTP request and return an object with return code and filename
-httpRequest parseRequest(char *msg){
+httpRequest parseRequest(char *msg, world World){
     httpRequest ret;
     ret.filename = NULL;
     ret.content = NULL;
@@ -194,7 +194,7 @@ httpRequest parseRequest(char *msg){
         if (strcmp(routes[i]->routename, filename) == 0) {
           // TODO do the custom route action
           ret.returncode = 200;
-          ret.content = (routes[i]->routeFnPtr)(10);
+          ret.content = (routes[i]->routeFnPtr)(World);
           return ret;
         }
       }
@@ -301,6 +301,29 @@ int printHeader(int fd, int returncode, char* contentType)
 
 
 int main(int argc, char *argv[]) {
+
+  world World;
+  World.Rooms[0].Id = 1;
+  World.Rooms[0].Width = 10;
+  World.Rooms[0].Height = 10;
+  for (uchar i = 0; i < World.Rooms[0].Width; i++) {
+    for (uchar j = 0; j < World.Rooms[0].Height; j++) {
+      World.Rooms[0].Floor[i][j] = FLOOR_GRASS;
+    }
+  }
+
+  World.Entities[0].Id = 1;
+  World.Entities[0].Type = PLAYER_ENTITY;
+  World.Entities[0].Location.X = 3;
+  World.Entities[0].Location.Y = 3;
+  World.Entities[0].Location.RoomId = 1;
+
+  World.Entities[1].Id = 2;
+  World.Entities[1].Type = EXIT_ENTITY;
+  World.Entities[1].Location.X = 0;
+  World.Entities[1].Location.Y = 0;
+  World.Entities[1].Location.RoomId = 1;
+
     int conn_s;                  //  connection socket
     short int port = PORT;       //  port number
     struct sockaddr_in servaddr; //  socket address structure
@@ -390,7 +413,7 @@ int main(int argc, char *argv[]) {
                 char * header = getMessage(conn_s);
                 
                 // Parse the request
-                httpRequest details = parseRequest(header);
+                httpRequest details = parseRequest(header, World);
                 
                 // Free header now were done with it
                 free(header);
