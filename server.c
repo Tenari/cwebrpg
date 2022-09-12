@@ -11,6 +11,8 @@
 #include <sys/mman.h>         // mmap library
 #include <sys/stat.h>         // more constants
 #include <sys/time.h>
+#include "lib/cJSON.h"
+#include "lib/cJSON.c"
 #include "routes.c"
 
 // global constants
@@ -143,7 +145,7 @@ char * publicFilePath(char* file) {
 }
 
 // parse a HTTP request and return an object with return code and filename
-httpRequest parseRequest(char *msg, world World){
+httpRequest parseRequest(char *msg, world *World){
     httpRequest ret;
     ret.filename = NULL;
     ret.content = NULL;
@@ -375,9 +377,7 @@ int main(int argc, char *argv[]) {
 
     printf("server starting on port %d\n", port);
     // Loop infinitly serving requests
-    while(1)
-    {
-    
+    while(1) {
         if (children < childrenToSpawn) {
           pid = fork();
           children++;
@@ -391,8 +391,7 @@ int main(int argc, char *argv[]) {
         }
         
         // Have the child process deal with the connection
-        if ( pid == 0)
-        {	
+        if ( pid == 0) {
             printf("process starting\n");
             // Have the child loop infinetly dealing with a connection then getting the next one in the queue
             while(1)
@@ -413,7 +412,7 @@ int main(int argc, char *argv[]) {
                 char * header = getMessage(conn_s);
                 
                 // Parse the request
-                httpRequest details = parseRequest(header, World);
+                httpRequest details = parseRequest(header, &World);
                 
                 // Free header now were done with it
                 free(header);
