@@ -5,9 +5,10 @@
 #include <unistd.h>
 #include <sys/time.h>
 #include <sys/stat.h>
+#include <arpa/inet.h>
 //#include <sys/socket.h>
 //#include <signal.h>
-#include <arpa/inet.h>
+
 // local libs
 #include "lib/cJSON.h"
 #include "lib/cJSON.c"

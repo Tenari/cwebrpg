@@ -1,6 +1,6 @@
 struct route {
   char* (*FnPtr)(world*);
-  char *Path;
+  const char *Path;
 };
 
 // TO ADD A ROUTE:

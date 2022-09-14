@@ -1,28 +1,18 @@
-A Simple Webserver Written in C
-===============================
+# A Web-based MMORPG that runs on a C++ webserver
 
-This is a simple webserver written in the C programming language.
+A pthreads-based webserver written in C that holds the gamestate in memory (and makes backups to disk) with a js/html/css/png client bundle that displays the game state and sends user input to the server. The core idea is a long-running `/newupdates` path on the server that the js frontend continually pings, but the server just hangs in response until there is actually an update to respond with (or timeout saying nothing happened). All other actions are just typical webrequests that are responded to immediately.
 
-It uses a pool of 10 connections to serve multiple requests concurrently and it keeps track of how much data it has output, printing it to the standard output stream.
+The actual game is just my same coalition victory crap, minimal version that's fun.
 
-
-Compiling and Using the System
-==============================
-
-On a Linux system system simply use the makefile to compile the server.
+## Compiling and Using the System
 
 On a Mac use this command to compile the server:
 
-`gcc server.c -o server`
+`g++ src/main.cpp -o game`
 
+To run the server type `./game [port] [threads]` into a terminal that is in the directory where the executable file is located.
 
-To run the server type `./server` into a terminal that is in the directory where the executable file is located.
-
-You can also pass a number after ./server to indicate how many threads the server should use like: `./server 3` for 3 child-processes
-
-By default the server runs on port 2001, so to try it out navigate to
-
-localhost:2001 in a webbrowser
+then go to `http://localhost:[port]/` to view/play the game.
 
 ## Code conventions
 

@@ -251,7 +251,7 @@ internal void startServer(int Port, int Threads) {
     
   timeval StartTime;
   timeval EndTime;
-  printf("server starting on port %d with %d threads\n", Port, Threads);
+  printf("server starting at http://localhost:%d/ with %d threads\n", Port, Threads);
   // Loop forever serving requests
   while(1) {
     ConnectionSocket = accept(
