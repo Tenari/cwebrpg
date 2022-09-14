@@ -1,5 +1,6 @@
 # Ignore the compiled file
 server
+game
 
 # Ignore any text editor backups
 *~

@@ -23,3 +23,10 @@ You can also pass a number after ./server to indicate how many threads the serve
 By default the server runs on port 2001, so to try it out navigate to
 
 localhost:2001 in a webbrowser
+
+## Code conventions
+
+- `CAPS` for constants
+- `snake_case` for custom types
+- `littleCamelCase` for functions
+- `BigCamelCase` for variables
