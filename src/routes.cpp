@@ -3,14 +3,18 @@ struct route {
   const char *Path;
 };
 
-// TO ADD A ROUTE:
-// 1. define a function that returns a char* here (that is the json content)
-// 2. add a route declaration at the bottom
-//    like: `route stateR = { .routeFnPtr = &state, .routename = "/state.json"};`
-
-char* state(world *World) {
+// handles `/render.json` request for initial gamestate
+internal char* getVisibleState(world *World) {
   return cJSON_Print(worldToJSON(World));
 }
+
+// handles `/newupdates.json` long-running stall-until-world-state-is-changed and return the diff
+// TODO
+
+// handles `/input.json` when users send input to game
+// TODO
+
+// TODO define some routes for login/signup etc bullshit
 
 /*
 char* moveRight(world *World) {
@@ -28,11 +32,15 @@ char* getUpdate(world *World) {
 }
 */
 
-const int RouteCount = 1;
-route StateRoute = { .FnPtr = &state, .Path = "/state.json" };
+// TO ADD A ROUTE:
+// 1. define a function that returns a char* here (that is the json content)
+// 2. add a route declaration at the bottom
+//    like: `route stateR = { .routeFnPtr = &state, .routename = "/state.json"};`
+global_variable const int RouteCount = 1;
+global_variable route StateRoute = { .FnPtr = &getVisibleState, .Path = "/state.json" };
 //route moveRightR = { .routeFnPtr = &moveRight, .routename = "/moveright"};
 //route getUpdateR = { .routeFnPtr = &getUpdate, .routename = "/update"};
-const route Routes[RouteCount] = {
+global_variable const route Routes[RouteCount] = {
   StateRoute
 //  &moveRightR,
 //  &getUpdateR

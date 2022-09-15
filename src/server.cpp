@@ -226,7 +226,7 @@ internal int printResponseFile(int fd, char *filename) {
     return totalsize;
 }
 
-internal void startServer(int Port, int Threads) {
+internal void startServer(int Port, int Threads, world *World) {
   int ConnectionSocket;
   sockaddr_in SocketAddress;
   uint SocketAddressSize = sizeof(SocketAddress);
@@ -280,8 +280,12 @@ internal void startServer(int Port, int Threads) {
     if (RequestDetails.Filename != NULL) {
       printResponseFile(ConnectionSocket, RequestDetails.Filename);
     } else {
-      //TODO: actually get the content from the RequestDetails.Route.FnPtr
-      transmitMessageOverSocket(ConnectionSocket, (char *)"{\"TODO\":\"content goes here\"}");
+      //TODO: handle the fast route/slow route shit
+      // if fast route, do it
+      // else, add to waiting stack for long-thread to handle
+      // actually get the content from the RequestDetails.Route.FnPtr
+      char * ResponseContent = (RequestDetails.Route->FnPtr)(World);
+      transmitMessageOverSocket(ConnectionSocket, ResponseContent);
       transmitMessageOverSocket(ConnectionSocket, (char *)"\n");
     }
 
