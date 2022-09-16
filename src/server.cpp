@@ -3,13 +3,21 @@
 #define HEADER_200 "HTTP/1.0 200 OK\nServer: C-Serv v0.2\nContent-Type: %s\n\n"
 #define HEADER_400 "HTTP/1.0 400 Bad Request\nServer: C-Serv v0.2\nContent-Type: %s\n\n"
 #define HEADER_404 "HTTP/1.0 404 Not Found\nServer: C-Serv v0.2\nContent-Type: %s\n\n"
+#define CONTENT_JSON "application/json"
+
 global_variable int ListeningSocket;
+
 struct http_request {
 	int ReturnCode;
 	char *Filename;
 	const route *Route;
 };
 
+struct thread_todo {
+  http_request Request;
+  int ConnectionSocket;
+  world *World;
+};
 
 internal void serverFail(const char *Message) {
   fprintf(stderr, "%s", Message);
@@ -226,7 +234,26 @@ internal int printResponseFile(int fd, char *filename) {
     return totalsize;
 }
 
-internal void startServer(int Port, int Threads, world *World) {
+// continually checks `Work` to see if a long-running request was dropped in there
+internal void *runServerThread(void *arg) {
+  thread_todo *Work = (thread_todo *)arg;
+
+  while (true) {
+    if (Work->ConnectionSocket != 0) {
+      printResponseHeader(Work->ConnectionSocket, Work->Request.ReturnCode, CONTENT_JSON);
+      char * ResponseContent = (Work->Request.Route->FnPtr)(Work->World);
+      transmitMessageOverSocket(Work->ConnectionSocket, ResponseContent);
+      transmitMessageOverSocket(Work->ConnectionSocket, (char *)"\n");
+
+      printf("served long-running request\n");
+      close(Work->ConnectionSocket);
+      Work->Request = (http_request){ 0 };
+      Work->ConnectionSocket = 0;
+    }
+  }
+}
+
+internal void startServer(int Port, int ThreadCount, world *World) {
   int ConnectionSocket;
   sockaddr_in SocketAddress;
   uint SocketAddressSize = sizeof(SocketAddress);
@@ -251,47 +278,71 @@ internal void startServer(int Port, int Threads, world *World) {
     
   timeval StartTime;
   timeval EndTime;
-  printf("server starting at http://localhost:%d/ with %d threads\n", Port, Threads);
+
+  printf("server starting at http://localhost:%d/ with %d threads\n", Port, ThreadCount);
+
+  // spin off our pool of threads for responding to SlowRequests
+  pthread_t Threads[ThreadCount];
+  thread_todo SlowRequests[ThreadCount];
+  for (int i = 0; i < ThreadCount; i++) {
+    SlowRequests[i] = (thread_todo){ 0 }; // clearing all to 0
+    SlowRequests[i].World = World;
+    if (pthread_create(&Threads[i], NULL, runServerThread, &SlowRequests[i])) {
+      serverFail("Error creating thread\n");
+    }
+  }
+
   // Loop forever serving requests
   while(1) {
+    // accept next connection
     ConnectionSocket = accept(
       ListeningSocket,
       (struct sockaddr *)&SocketAddress,
       &SocketAddressSize
     );
-    if(ConnectionSocket == -1) {
-      serverFail("Error accepting connection\n");
-    }
+    if(ConnectionSocket == -1) serverFail("Error accepting connection\n");
     gettimeofday(&StartTime,NULL);
 
+    // parse the header from the connection
     char * Header = serverReadHeaderFromSocket(ConnectionSocket);
     http_request RequestDetails = parseRequest(Header);
     free(Header); // Free header now were done with it
-                
-    
-    const char * ContentType; // detect ContentType
-    if (RequestDetails.Filename != NULL) {
-      ContentType = "text/html";
-    } else {
-      ContentType = "application/json";
-    }
-    printResponseHeader(ConnectionSocket, RequestDetails.ReturnCode, ContentType);
-          
-    if (RequestDetails.Filename != NULL) {
-      printResponseFile(ConnectionSocket, RequestDetails.Filename);
-    } else {
-      //TODO: handle the fast route/slow route shit
-      // if fast route, do it
-      // else, add to waiting stack for long-thread to handle
-      // actually get the content from the RequestDetails.Route.FnPtr
-      char * ResponseContent = (RequestDetails.Route->FnPtr)(World);
-      transmitMessageOverSocket(ConnectionSocket, ResponseContent);
-      transmitMessageOverSocket(ConnectionSocket, (char *)"\n");
-    }
 
-    gettimeofday(&EndTime,NULL);
-    printf("served in %d usec\n", EndTime.tv_usec - StartTime.tv_usec);
-    close(ConnectionSocket);
+    // pass slow routes off to threads for handling
+    if (RequestDetails.Route && RequestDetails.Route->Slow) {
+      bool InQueue = false;
+      while(!InQueue) {
+        for (int i = 0; i < ThreadCount; i++) {
+          if (SlowRequests[i].ConnectionSocket == 0) {
+            SlowRequests[i].Request = RequestDetails;
+            SlowRequests[i].ConnectionSocket = ConnectionSocket;
+            InQueue = true;
+            i = ThreadCount; // break out of loop
+          }
+        }
+      }
+    } else { // immediately handle fast routes
+      const char * ContentType; // detect ContentType
+      if (RequestDetails.Filename != NULL) {
+        ContentType = "text/html";
+      } else {
+        ContentType = CONTENT_JSON;
+      }
+      printResponseHeader(ConnectionSocket, RequestDetails.ReturnCode, ContentType);
+            
+      if (RequestDetails.Filename != NULL) {
+        printResponseFile(ConnectionSocket, RequestDetails.Filename);
+      } else {
+        // get the content from the RequestDetails.Route.FnPtr
+        char * ResponseContent = (RequestDetails.Route->FnPtr)(World);
+        transmitMessageOverSocket(ConnectionSocket, ResponseContent);
+        transmitMessageOverSocket(ConnectionSocket, (char *)"\n");
+      }
+
+      gettimeofday(&EndTime,NULL);
+      printf("served in %d usec\n", EndTime.tv_usec - StartTime.tv_usec);
+      close(ConnectionSocket);
+    }
   }
 }
 

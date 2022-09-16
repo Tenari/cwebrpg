@@ -9,7 +9,7 @@ function redraw() {
   gameDiv.innerHTML = html;
 }
 function update() {
-  fetch("/update").then(r => {
+  fetch("/updates.json").then(r => {
     r.json().then(s => {
       world = s;
       redraw();
@@ -18,7 +18,7 @@ function update() {
   })
 }
 document.addEventListener("DOMContentLoaded", () => {
-  fetch("/state.json").then( (r) => {
+  fetch("/render.json").then( (r) => {
     r.json().then((state) => {
       world = state;
       console.log(state);

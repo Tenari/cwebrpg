@@ -1,12 +1,3 @@
-struct game_memory {
-  bool IsInitialized;
-  ulong PermanentStorageSize;
-  void *PermanentStorage; // WARN: Required to be cleared to zero at startup
-  // currently not using Transient for anything
-  ulong TransientStorageSize;
-  void *TransientStorage; // WARN: Required to be cleared to zero at startup
-};
-
 struct location {
   uint X;
   uint Y;
