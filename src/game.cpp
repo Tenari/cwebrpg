@@ -12,12 +12,14 @@ cJSON * locationToJSON(location* Loc) {
   return jLoc;
 }
 
+#define EMPTY_ENTITY_TYPE 0
 #define PLAYER_ENTITY 1
 #define EXIT_ENTITY 2
 struct entity {
   uint Id;
   ushort Type;
   location Location;
+  char Name[32];
 };
 
 cJSON * entityToJSON(entity* Entity) {
@@ -25,6 +27,9 @@ cJSON * entityToJSON(entity* Entity) {
   cJSON_AddItemToObject(jEntity, "id", cJSON_CreateNumber(Entity->Id));
   cJSON_AddItemToObject(jEntity, "type", cJSON_CreateNumber(Entity->Type));
   cJSON_AddItemToObject(jEntity, "location", locationToJSON(&(Entity->Location)));
+  if (strlen(Entity->Name) > 0) {
+    cJSON_AddItemToObject(jEntity, "name", cJSON_CreateString(Entity->Name));
+  }
   return jEntity;
 }
 
@@ -50,7 +55,7 @@ cJSON * worldToJSON(world* World) {
   cJSON *entities = cJSON_CreateArray();
   cJSON_AddItemToObject(j_world, "entities", entities);
   for (int index = 0; index < MAX_ENTITIES; ++index) {
-    if (World->Entities[index].Id != 0) {
+    if (World->Entities[index].Type != EMPTY_ENTITY_TYPE) {
       cJSON_AddItemToArray(entities, entityToJSON(&(World->Entities[index])));
     }
   }
@@ -67,17 +72,45 @@ world *setupWorld(world *World) {
     }
   }
 
-  World->Entities[0].Id = 1;
-  World->Entities[0].Type = PLAYER_ENTITY;
-  World->Entities[0].Location.X = 3;
-  World->Entities[0].Location.Y = 3;
-  World->Entities[0].Location.RoomId = 1;
+  // clear entities array
+  for (int i =0; i < MAX_ENTITIES; i++) {
+    World->Entities[i].Id = i;
+    World->Entities[i].Type = EMPTY_ENTITY_TYPE;
+  }
 
-  World->Entities[1].Id = 2;
+  World->Entities[1].Id = 1;
   World->Entities[1].Type = EXIT_ENTITY;
   World->Entities[1].Location.X = 0;
   World->Entities[1].Location.Y = 0;
   World->Entities[1].Location.RoomId = 1;
 
   return World;
+}
+
+entity* findPlayer(world* World, char Name[32]) {
+  entity* Result = NULL;
+  for (int i =0; i < MAX_ENTITIES; i++) {
+    if (World->Entities[i].Type == PLAYER_ENTITY && strcmp(World->Entities[i].Name, Name) == 0) {
+      Result = &(World->Entities[i]);
+      i = MAX_ENTITIES; // exit loop
+    }
+  }
+  return Result;
+}
+entity* createPlayer(world* World, char Name[32]) {
+  entity* Result = NULL;
+  for (int i =0; i < MAX_ENTITIES; i++) {
+    // find first empty entity and initialize as player
+    if (World->Entities[i].Type == EMPTY_ENTITY_TYPE) {
+      World->Entities[i].Type = PLAYER_ENTITY;
+      strcpy(World->Entities[i].Name, Name);
+      World->Entities[i].Location.X = 3;
+      World->Entities[i].Location.Y = 3;
+      World->Entities[i].Location.RoomId = 1;
+      Result = &(World->Entities[i]);
+      printf("player created: %s\n",Result->Name);
+      i = MAX_ENTITIES; // exit loop
+    }
+  }
+  return Result;
 }

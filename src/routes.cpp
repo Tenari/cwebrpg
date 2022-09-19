@@ -1,17 +1,27 @@
 struct route {
-  char* (*FnPtr)(world*);
+  char* (*FnPtr)(world*, char*);
   const char *Path;
   bool Slow;
 };
 
 // handles `/render.json` request for initial gamestate
-internal char* getVisibleState(world *World) {
+internal char* getVisibleState(world *World, char* Query) {
+  char Name[32];
+  parseUsernameFromQuery(Query, Name);
+  if (strlen(Name) == 0) return "{}";
+
+  entity* UserEntity = findPlayer(World, Name);
+  if (UserEntity == NULL) {
+    // create a new user
+    UserEntity = createPlayer(World, Name);
+  }
+
   // TODO limit result to only the state that's visible by the user
   return cJSON_Print(worldToJSON(World));
 }
 
 // handles `/updates.json` long-running stall-until-world-state-is-changed and return the diff
-char* getUpdate(world *World) {
+char* getUpdate(world *World, char* Query) {
   // TODO actually only get updates
   sleep(3);
   // if world_has_changed

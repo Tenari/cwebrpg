@@ -15,6 +15,7 @@
 #include "mytypes.h"
 #include "util.cpp"
 #include "game.cpp"
+#include "web.cpp"
 #include "routes.cpp"
 #include "server.cpp"
 

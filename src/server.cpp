@@ -10,6 +10,7 @@ global_variable int ListeningSocket;
 struct http_request {
 	int ReturnCode;
 	char *Filename;
+	char *Query;
 	const route *Route;
 };
 
@@ -101,30 +102,41 @@ internal char *serverReadHeaderFromSocket(int fd) {
     return Header;
 }
 
-internal char * serverReadRequestPath(char* Header)
-{
-  char * Path;
-  if( (Path = (char *)malloc(sizeof(char) * strlen(Header))) == NULL) {
-    serverFail("Error allocating memory in serverReadRequestPath()\n");
-  }
-  
-  // Get the Path from the header
-  sscanf(Header, "GET %s HTTP/1.1", Path);
-  return Path;
-}
-
 internal http_request parseRequest(char *Header){
   http_request Request;
   Request.ReturnCode = 400; // initialize to error code, so we never erroneously return 200-success
   Request.Filename = NULL;
   Request.Route = NULL;
+  Request.Query = NULL;
        
   char* Path;
   if( (Path = (char *)malloc(sizeof(char) * strlen(Header))) == NULL) {
     serverFail("Error allocating memory to Path in parseRequest()\n");
   }
-  Path = serverReadRequestPath(Header);
+  char* Query;
+  if( (Query = (char *)malloc(sizeof(char) * strlen(Header))) == NULL) {
+    serverFail("Error allocating memory to Query in parseRequest()\n");
+  }
+  // Get the Path from the header
+  sscanf(Header, "GET %s HTTP/1.1", Path);
+  bool FoundQuery = false;
+  int qi = 0;
+  int PathSize = strlen(Path);
+  for (int i = 0; i < PathSize; i++) {
+    if (FoundQuery) {
+      Query[qi] = Path[i];
+      qi++;
+    }
+    if (Path[i] == '?') {
+      FoundQuery = true;
+      Path[i] = '\0'; // truncate the Path here
+    }
+  }
   printf("request for %s ",Path);
+  if (FoundQuery) {
+    printf("with query %s ",Query);
+    Request.Query = Query;
+  }
   
   FILE * PublicPageExists = fopen(makePublicFilePath(Path), "r" );
     
@@ -239,9 +251,11 @@ internal void *runServerThread(void *arg) {
   thread_todo *Work = (thread_todo *)arg;
 
   while (true) {
+    // TODO go to sleep/wait without burning cpu somehow?
     if (Work->ConnectionSocket != 0) {
       printResponseHeader(Work->ConnectionSocket, Work->Request.ReturnCode, CONTENT_JSON);
-      char * ResponseContent = (Work->Request.Route->FnPtr)(Work->World);
+
+      char * ResponseContent = (Work->Request.Route->FnPtr)(Work->World, Work->Request.Query);
       transmitMessageOverSocket(Work->ConnectionSocket, ResponseContent);
       transmitMessageOverSocket(Work->ConnectionSocket, (char *)"\n");
 
@@ -334,13 +348,13 @@ internal void startServer(int Port, int ThreadCount, world *World) {
         printResponseFile(ConnectionSocket, RequestDetails.Filename);
       } else {
         // get the content from the RequestDetails.Route.FnPtr
-        char * ResponseContent = (RequestDetails.Route->FnPtr)(World);
+        char * ResponseContent = (RequestDetails.Route->FnPtr)(World, RequestDetails.Query);
         transmitMessageOverSocket(ConnectionSocket, ResponseContent);
         transmitMessageOverSocket(ConnectionSocket, (char *)"\n");
       }
 
       gettimeofday(&EndTime,NULL);
-      printf("served in %d usec\n", EndTime.tv_usec - StartTime.tv_usec);
+      printf("served %d in %d usec\n", RequestDetails.ReturnCode, EndTime.tv_usec - StartTime.tv_usec);
       close(ConnectionSocket);
     }
   }
@@ -357,4 +371,3 @@ internal void cleanupServer(int sig) {
 
   exit(EXIT_SUCCESS);
 }
-
