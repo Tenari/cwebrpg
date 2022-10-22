@@ -1,15 +1,27 @@
+const CANVAS_WIDTH = 800;
+const CANVAS_HEIGHT = 600;
+let ctx;
 var world = {};
 var TYPES = [0, "player", "exit"];
 function redraw() {
-  const gameDiv = document.getElementById("game");
-  let html = "";
+  const factor = 10;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+  ctx.font = "12px Courier New";
   world.entities.forEach(e => {
-    html += ("<div>entity id: "+e.id+", name: "+e.name+", type: "+TYPES[e.type]+", x: "+e.location.x+"</div>");
+    if(TYPES[e.type] == "player") {
+      ctx.fillStyle = '#000000';
+    } else {
+      ctx.fillStyle = '#00ff00';
+    }
+    ctx.fillRect(e.location.x*factor, e.location.y * factor, factor, factor);
+    ctx.fillStyle = "#0000ff";
+    ctx.strokeStyle = "#0000ff";
+    ctx.fillText(e.name, e.location.x*factor, e.location.y * factor);
   })
-  gameDiv.innerHTML = html;
 }
 function update() {
-  fetch("/updates.json").then(r => {
+  fetch("/updates.json?last_known="+world.lastUpdate).then(r => {
     r.json().then(s => {
       world = s;
       redraw();
@@ -51,6 +63,8 @@ function createUser() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  ctx = document.getElementById("game").getContext('2d');
+
   let username = getCookie('username');
   if (username == '') {
     username = createUser();
@@ -64,8 +78,9 @@ document.addEventListener("DOMContentLoaded", () => {
     })
   })
   document.addEventListener("keyup", (e) => {
-    if (e.key === "d") {
-      fetch("/moveright").then( r => { r.text().then(t => console.log(t))});
+    const directions = {d: 'W', w: 'N', s: 'S', a: 'E'};
+    if (directions[e.key]) {
+      fetch("/move?u="+username+"&d="+directions[e.key]).then( r => { r.text().then(t => console.log(t))});
     }
   });
 })

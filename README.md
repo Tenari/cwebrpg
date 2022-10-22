@@ -8,7 +8,7 @@ The actual game is just my same coalition victory crap, minimal version that's f
 
 On a Mac use this command to compile the server:
 
-`g++ src/main.cpp -o game`
+`./build.sh`
 
 To run the server type `./game [port] [threads]` into a terminal that is in the directory where the executable file is located.
 

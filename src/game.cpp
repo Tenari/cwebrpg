@@ -48,10 +48,15 @@ struct world {
 //  entity Entities[65536];
   entity Entities[MAX_ENTITIES];
   room Rooms[2];
+  ulong LastUpdate;
+  pthread_cond_t HasUpdated;
+  pthread_mutex_t HasUpdatedMutex;
 };
 
 cJSON * worldToJSON(world* World) {
   cJSON *j_world = cJSON_CreateObject();
+  cJSON_AddItemToObject(j_world, "lastUpdate", cJSON_CreateNumber(World->LastUpdate));
+
   cJSON *entities = cJSON_CreateArray();
   cJSON_AddItemToObject(j_world, "entities", entities);
   for (int index = 0; index < MAX_ENTITIES; ++index) {
@@ -83,12 +88,19 @@ world *setupWorld(world *World) {
   World->Entities[1].Location.X = 0;
   World->Entities[1].Location.Y = 0;
   World->Entities[1].Location.RoomId = 1;
+  
+  World->LastUpdate      = (ulong)time(NULL);
+  World->HasUpdated      = (pthread_cond_t)PTHREAD_COND_INITIALIZER;
+  World->HasUpdatedMutex = (pthread_mutex_t)PTHREAD_MUTEX_INITIALIZER;
 
   return World;
 }
 
 entity* findPlayer(world* World, char Name[32]) {
   entity* Result = NULL;
+  if (Name == NULL) {
+    return Result;
+  }
   for (int i =0; i < MAX_ENTITIES; i++) {
     if (World->Entities[i].Type == PLAYER_ENTITY && strcmp(World->Entities[i].Name, Name) == 0) {
       Result = &(World->Entities[i]);
