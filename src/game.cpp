@@ -211,7 +211,11 @@ internal bool processInput(user_input *Input, world* World) {
   if (Room == NULL) return false;
   bool DidSomething = false;
 
-  if (UserEntity->Dead) return false;
+  if (UserEntity->Dead) {
+    Input->Id = 0;
+    Input->Text[0] = '\0';
+    return false;
+  }
 
   for (int i = 0; i < MAX_USER_INPUT_LEN; i++) {
     if (Input->Text[i] == '\0') {
