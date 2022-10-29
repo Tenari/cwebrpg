@@ -1,2 +1,2 @@
 #!/bin/bash
-g++ -lpthread src/main.cpp -o game
+g++ -g -lpthread src/main.cpp -o game
