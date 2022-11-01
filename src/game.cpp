@@ -44,14 +44,28 @@ cJSON * entityToJSON(entity* Entity) {
   return jEntity;
 }
 
+internal bool killPlayer(entity* Player) {
+  timeval CurrentTime;
+  gettimeofday(&CurrentTime,NULL);
+  bool DidSomething = false;
+  if (Player != NULL && !Player->Dead) {
+    Player->Dead = true;
+    Player->DiedAt = CurrentTime.tv_sec;
+    Player->DeathCount ++;
+    DidSomething = true;
+  }
+  return DidSomething;
+}
+
 #define FLOOR_NULL 0
 #define FLOOR_GRASS 1
 #define FLOOR_STONE 2
+#define MAX_ROOM_DIMENSION 512
 struct room {
   uint Id;
   uint Width;
   uint Height;
-  uchar Floor[1000][1000];
+  uchar Floor[MAX_ROOM_DIMENSION][MAX_ROOM_DIMENSION];
 };
 
 #define MAX_ENTITIES 100
@@ -66,21 +80,53 @@ struct world {
   user_input Inputs[MAX_PLAYERS];
 };
 
-cJSON * worldToJSON(world* World) {
+internal room* findRoom(world* World, uint Id) {
+  room* Result = NULL;
+  if (Id == 0) {
+    return Result;
+  }
+  for (int i =0; i < ROOM_COUNT; i++) {
+    if (World->Rooms[i].Id == Id) {
+      Result = &(World->Rooms[i]);
+      break;
+    }
+  }
+  return Result;
+}
+
+internal cJSON * worldToJSON(world* World, uint RoomId) {
   cJSON *j_world = cJSON_CreateObject();
   cJSON_AddItemToObject(j_world, "lastUpdate", cJSON_CreateNumber(World->LastUpdate));
 
   cJSON *entities = cJSON_CreateArray();
   cJSON_AddItemToObject(j_world, "entities", entities);
-  for (int index = 0; index < MAX_ENTITIES; ++index) {
-    if (World->Entities[index].Type != EMPTY_ENTITY_TYPE) {
-      cJSON_AddItemToArray(entities, entityToJSON(&(World->Entities[index])));
+  for (int i = 0; i < MAX_ENTITIES; ++i) {
+    if (World->Entities[i].Type != EMPTY_ENTITY_TYPE && World->Entities[i].Location.RoomId == RoomId) {
+      cJSON_AddItemToArray(entities, entityToJSON(&(World->Entities[i])));
     }
   }
   return j_world;
 }
 
-world *setupWorld(world *World) {
+internal cJSON * roomToJSON(room* Room) {
+  cJSON *j_room = cJSON_CreateObject();
+  cJSON_AddItemToObject(j_room, "id", cJSON_CreateNumber(Room->Id));
+  cJSON_AddItemToObject(j_room, "width", cJSON_CreateNumber(Room->Width));
+  cJSON_AddItemToObject(j_room, "height", cJSON_CreateNumber(Room->Height));
+  cJSON *j_floor = cJSON_CreateArray();
+  for (int i = 0; i < Room->Width; ++i) {
+    cJSON *j_floor_col = cJSON_CreateArray();
+    for (int j = 0; j < Room->Height; ++j) {
+      cJSON_AddItemToArray(j_floor_col, cJSON_CreateNumber(Room->Floor[i][j]));
+    }
+    cJSON_AddItemToArray(j_floor, j_floor_col);
+  }
+  cJSON_AddItemToObject(j_room, "floor", j_floor);
+
+  return j_room;
+}
+
+internal world *setupWorld(world *World) {
   World->Rooms[0].Id = 1;
   World->Rooms[0].Width = 40;
   World->Rooms[0].Height = 30;
@@ -109,19 +155,26 @@ world *setupWorld(world *World) {
   return World;
 }
 
-internal room* findRoom(world* World, uint Id) {
-  room* Result = NULL;
-  if (Id == 0) {
-    return Result;
-  }
-  for (int i =0; i < ROOM_COUNT; i++) {
-    if (World->Rooms[i].Id == Id) {
-      Result = &(World->Rooms[i]);
-      break;
+internal entity* findPlayer(world* World, location Location) {
+  entity * Result = NULL;
+  for(int i=0; i<MAX_ENTITIES; i++) {
+    entity *Entity = &(World->Entities[i]);
+    if (
+        Entity->Type == PLAYER_ENTITY 
+        && Entity->Location.X == Location.X
+        && Entity->Location.Y == Location.Y
+        && Entity->Location.RoomId == Location.RoomId
+       ) {
+       return Entity;
     }
   }
   return Result;
 }
+
+entity* findPlayer(world* World, uint RoomId, uint X, uint Y) {
+  return findPlayer(World, (location){ .X = X, .Y = Y, .RoomId = RoomId});
+}
+
 entity* findPlayer(world* World, uint Id) {
   entity* Result = NULL;
   if (Id == 0) {
@@ -135,6 +188,7 @@ entity* findPlayer(world* World, uint Id) {
   }
   return Result;
 }
+
 entity* findPlayer(world* World, char Name[32]) {
   entity* Result = NULL;
   if (Name == NULL) {
@@ -148,6 +202,7 @@ entity* findPlayer(world* World, char Name[32]) {
   }
   return Result;
 }
+
 entity* createFireball(world* World, uint X, uint Y, uint RoomId) {
   entity* Result = NULL;
   for (uint i =0; i < MAX_ENTITIES; i++) {
@@ -190,7 +245,6 @@ entity* createPlayer(world* World, char Name[32]) {
   return Result;
 }
 
-
 internal char* printVisibleWorldState(world *World, char Name[32]) {
   entity* UserEntity = findPlayer(World, Name);
   if (UserEntity == NULL) {
@@ -199,7 +253,10 @@ internal char* printVisibleWorldState(world *World, char Name[32]) {
   }
 
   // TODO limit result to only the state that's visible by the user
-  return cJSON_PrintUnformatted(worldToJSON(World));
+  cJSON * JWorld = worldToJSON(World, UserEntity->Location.RoomId);
+  char * Result = cJSON_PrintUnformatted(JWorld);
+  cJSON_Delete(JWorld);
+  return Result;
 }
 
 // returns true if it changed the world in some way
@@ -232,14 +289,28 @@ internal bool processInput(user_input *Input, world* World) {
           DidSomething = true;
         }
       } else if (Input->Text[i] == 'E') { //east
+        if (UserEntity->Location.X < (Room->Width-1)) {
+          UserEntity->Location.X += 1;
+          DidSomething = true;
+        }
+      } else if (Input->Text[i] == 'W') { //west
         if (UserEntity->Location.X > 0) {
           UserEntity->Location.X -= 1;
           DidSomething = true;
         }
-      } else if (Input->Text[i] == 'W') { //west
-        if (UserEntity->Location.X < (Room->Width-1)) {
-          UserEntity->Location.X += 1;
-          DidSomething = true;
+      } else if (Input->Text[i] == 'P') { //punch
+        entity* OpponentN = findPlayer(World, Room->Id, UserEntity->Location.X, UserEntity->Location.Y-1);
+        entity* OpponentS = findPlayer(World, Room->Id, UserEntity->Location.X, UserEntity->Location.Y+1);
+        entity* OpponentE = findPlayer(World, Room->Id, UserEntity->Location.X+1, UserEntity->Location.Y);
+        entity* OpponentW = findPlayer(World, Room->Id, UserEntity->Location.X-1, UserEntity->Location.Y);
+        if (OpponentN != NULL) { // north
+          DidSomething = killPlayer(OpponentN);
+        } else if (OpponentS != NULL) {//south
+          DidSomething = killPlayer(OpponentS);
+        } else if (OpponentE != NULL) {//east
+          DidSomething = killPlayer(OpponentE);
+        } else if (OpponentW != NULL) {//west
+          DidSomething = killPlayer(OpponentW);
         }
       } else if (Input->Text[i] == 'F') { //fire
 #define FIRE_INPUT_COORD_LEN 4
@@ -279,22 +350,6 @@ internal bool processInput(user_input *Input, world* World) {
   return DidSomething;
 }
 
-internal entity* getPlayerAt(world* World, location Location) {
-  entity * Result = NULL;
-  for(int i=0; i<MAX_ENTITIES; i++) {
-    entity *Entity = &(World->Entities[i]);
-    if (
-        Entity->Type == PLAYER_ENTITY 
-        && Entity->Location.X == Location.X
-        && Entity->Location.Y == Location.Y
-        && Entity->Location.RoomId == Location.RoomId
-       ) {
-       return Entity;
-    }
-  }
-  return Result;
-}
-
 // run in a pthread by main()
 #define FRAMES_PER_SECOND 60
 internal void* gameLoop(void*args) {
@@ -318,13 +373,8 @@ internal void* gameLoop(void*args) {
           *Entity = (entity){0}; // remove the fireball if it's been around for at least 3 seconds
           DidSomething = true;
         }
-        entity* OverlappingPlayer = getPlayerAt(World, Entity->Location);
-        if (OverlappingPlayer != NULL && !OverlappingPlayer->Dead) {
-          OverlappingPlayer->Dead = true;
-          OverlappingPlayer->DiedAt = LoopStartTime.tv_sec;
-          OverlappingPlayer->DeathCount ++;
-          DidSomething = true;
-        }
+        entity* OverlappingPlayer = findPlayer(World, Entity->Location);
+        killPlayer(OverlappingPlayer);
       }
 
       if (Entity->Type == PLAYER_ENTITY) {

@@ -345,8 +345,12 @@ internal void *readWebsocketConnections(void *arg) {
           UserInput[0] = '\0';
         } else {
           uint OpCode = UserInput[0] & 0b00001111;
-          printf("calculated OpCode %d \n", OpCode);
           if (OpCode == 8) {
+            close(Websocket->Socket);
+            *Websocket = (websocket_connection){ 0 };// clear to 0
+            printf("cleared websocket_connection\n");
+          } else if (OpCode == 0) {
+            printf("calculated OpCode %d \n", OpCode);
             close(Websocket->Socket);
             *Websocket = (websocket_connection){ 0 };// clear to 0
             printf("cleared websocket_connection\n");

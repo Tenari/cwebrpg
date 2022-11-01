@@ -20,12 +20,24 @@ internal char* getUpdate(world *World, char* Query) {
   if (World->LastUpdate <= LastKnownTime) {
     // maybe do something?
   }
-  return cJSON_Print(worldToJSON(World));
+  cJSON * JWorld = worldToJSON(World, 1);
+  char * Result = cJSON_Print(JWorld);
+  cJSON_Delete(JWorld);
+  return Result;
+}
+
+// handles `/room.json` required `id=` query param
+internal char* renderRoom(world *World, char* Query) {
+  uint Id = parseIntFromQuery(Query, (char *)"id=");
+  room * Room = findRoom(World, Id);
+  cJSON * Json = roomToJSON(Room);
+  char * Result = cJSON_PrintUnformatted(Json);
+  cJSON_Delete(Json);
+  return Result;
 }
 
 // handles `/input.json` when users send input to game
-// TODO
-
+// DEPRECATED
 internal char* readInput(world *World, char* Query) {
   char Name[32];
   Name[0] = '\0';
@@ -70,12 +82,14 @@ internal char* readInput(world *World, char* Query) {
 // 1. define a function that returns a char* here (that is the json content)
 // 2. add a route declaration at the bottom
 //    like: `route stateR = { .routeFnPtr = &state, .routename = "/state.json"};`
-global_variable const int RouteCount = 3;
+global_variable const int RouteCount = 4;
 global_variable route StateRoute = { .FnPtr = &getVisibleState, .Path = "/render.json", .Slow = false };
 global_variable route ReadInputR = { .FnPtr = &readInput, .Path = "/input", .Slow = false };
 global_variable route GetUpdateRoute = { .FnPtr = &getUpdate, .Path = "/updates.json", .Slow = true };
+global_variable route GetRoomRoute = { .FnPtr = &renderRoom, .Path = "/room.json", .Slow = false };
 global_variable const route Routes[RouteCount] = {
   StateRoute,
   GetUpdateRoute,
+  GetRoomRoute,
   ReadInputR
 };

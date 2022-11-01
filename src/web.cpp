@@ -56,6 +56,38 @@ internal void parseUsernameFromQuery(char* Query, char Name[32]) {
   Name[NameIndex] = '\0';
 }
 
+internal uint parseIntFromQuery(char* Query, char Param[32]) {
+  if (Query == NULL) {
+    return 0;
+  }
+  int QuerySize = strlen(Query);
+  int ParamLen = strlen(Param);
+  bool ParamFound = false;
+  uint Result = 0;
+  for (int i=0; i< QuerySize; i++) {
+    if (ParamFound) {
+      if (Query[i] == '&' || Query[i] == '\n') {
+        ParamFound = false;
+        i = QuerySize; // break loop
+      } else {
+        Result = (Result * 10) + (Query[i] - '0');
+      }
+    } else {
+      bool AllMatched = true;
+      for (int j =0; j< ParamLen; j++) {
+        if (Query[i+j] != Param[j]) {
+          AllMatched = false;
+        }
+      }
+      if (AllMatched) {
+        i += ParamLen - 1;
+        ParamFound = true;
+      }
+    }
+  }
+  return Result; // never found it
+}
+
 internal char parseCharFromQuery(char* Query, char Param[32]) {
   if (Query == NULL) {
     return 0;

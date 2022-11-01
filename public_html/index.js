@@ -1,17 +1,34 @@
+function getRandomInt(min, max) {
+  min = Math.ceil(min);
+  max = Math.floor(max);
+  return Math.floor(Math.random() * (max - min) + min); // The maximum is exclusive and the minimum is inclusive
+}
 const CANVAS_WIDTH = 800;
 const CANVAS_HEIGHT = 600;
+const FLOORS = [null, 'grass', 'stone'];
+const GRASS_COLORS = ['#3b680d', '#3b680d', '#3b680d', '#68680d','#68680d', '#0d680d'];
+let GRASS_ORDER = [];
+(() => {
+  for (let i = 0; i<100; i++) {
+    GRASS_ORDER[i] = GRASS_COLORS[getRandomInt(0, GRASS_COLORS.length)];
+  }
+})();
+
+const STONE_COLORS = ['#756f7c', '#7c7c6f'];
 // TODO user can remap this
 const VALID_INPUT = {
   'KeyW': 'N', //north
-  'KeyA': 'E', //east
+  'KeyD': 'E', //east
   'KeyS': 'S', //south
-  'KeyD': 'W', //west
+  'KeyA': 'W', //west
+  'KeyP': 'P', //punch
 };
 let ctx, username;
 var localState = {
   mode: "move",
   cursor: null,
 };
+var room = {};
 var world = {};
 var TYPES = [0, "player", "exit", 'fireball'];
 function redraw() {
@@ -21,28 +38,34 @@ function redraw() {
   ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
   const player = getUserPlayer();
-  if (player.dead) {
-    ctx.fillStyle = "#000000";
-    ctx.strokeStyle = "#000000";
-    ctx.font = "20px Courier New";
-    ctx.fillText(
-      'you are dead, loser. After ~10 seconds you will respawn.',
-      factor * 5,
-      5 * factor
-    );
-  }
-  if (player.deathCount > 0) {
-    document.getElementById("count").innerHTML = ""+player.deathCount;
+
+  // draw room
+  if (room && room.width && room.height && room.id == player.location.roomid) {
+    for (let x = 0; x < room.width; x+=1) {
+      for (let y = 0; y < room.height; y+=1) {
+        let floorColor = null;
+        if (FLOORS[room.floor[x][y]] === 'grass') {
+          floorColor = GRASS_ORDER[(x+y) % GRASS_ORDER.length];
+        }
+        if (FLOORS[room.floor[x][y]] === 'stone') {
+          floorColor = STONE_COLORS[(x+y) % STONE_COLORS.length];
+        }
+        drawTile(ctx, x*factor, y*factor, factor, floorColor);
+      }
+    }
   }
 
-  ctx.font = "12px Courier New";
+  if (player.dead) {
+    drawText(ctx, "you are dead, loser. After ~10 seconds you will respawn.", factor*5, factor*5, "black", "20px Courier New");
+    if (player.deathCount > 0) {
+      document.getElementById("count").innerHTML = ""+player.deathCount;
+    }
+  }
 
   world.entities.forEach(e => {
     if(TYPES[e.type] == "player") {
       // print the name
-      ctx.fillStyle = "#0000ff";
-      ctx.strokeStyle = "#0000ff";
-      ctx.fillText(e.name, e.location.x*factor, e.location.y * factor);
+      drawText(ctx, e.name, e.location.x*factor, e.location.y * factor, "#0000ff");
       // block color
       if (e.dead) {
         ctx.fillStyle = '#878787';
@@ -62,8 +85,24 @@ function redraw() {
     ctx.strokeStyle = "red";
     ctx.rect(localState.cursor.x * factor, localState.cursor.y * factor, factor, factor);
     ctx.stroke();
+    drawText(ctx, "Casting Fireball...", 9*factor, 1 * factor, "red", "20px Courier New");
   }
 }
+
+function drawText(ctx, text, x, y, color, font) {
+  font = font || "12px Courier New";
+  color = color || "#000000";
+  ctx.fillStyle = color;
+  ctx.strokeStyle = color;
+  ctx.font = font;
+  ctx.fillText(text,x,y);
+}
+function drawTile(ctx, x, y, size, color) {
+  color = color || "#000000";
+  ctx.fillStyle = color;
+  ctx.fillRect(x, y, size, size);
+}
+
 function getUserPlayer(){
   return world.entities.find(e=>{
     return TYPES[e.type] == 'player' && e.name == username;
@@ -175,10 +214,10 @@ function handleCursorMove(e) {
           localState.cursor.y += 1;
           break;
         case 'E':
-          localState.cursor.x -= 1;
+          localState.cursor.x += 1;
           break;
         case 'W':
-          localState.cursor.x += 1;
+          localState.cursor.x -= 1;
           break;
       }
       redraw();
@@ -204,16 +243,17 @@ document.addEventListener("DOMContentLoaded", () => {
   ws.onmessage = (event) => {
     // event.data is either a string (if text) or arraybuffer (if binary)
     world = JSON.parse(event.data);
+    const player = getUserPlayer();
+    if (player.location.roomid != room.id) {
+      fetch("/room.json?id="+player.location.roomid).then( (r) => {
+        r.json().then((state) => {
+          room = state;
+          redraw();
+        })
+      });
+    }
     redraw();
   };
-  /*
-  fetch("/render.json?u="+username).then( (r) => {
-    r.json().then((state) => {
-      world = state;
-      redraw();
-      update(username);
-    })
-  }) */
   document.addEventListener("keydown", (e) => {
     handleCursorMove(e);
   })
@@ -224,7 +264,6 @@ document.addEventListener("DOMContentLoaded", () => {
         ws.send(VALID_INPUT[e.code]);
       }
     } else if (localState.mode == 'cast') {
-      handleCursorMove(e);
       if (e.code == 'Enter') {
         ws.send('F '+localState.cursor.x+" "+localState.cursor.y);
         toggleInputMode();
