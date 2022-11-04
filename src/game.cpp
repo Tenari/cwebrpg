@@ -29,6 +29,8 @@ struct entity {
   bool Dead;
   time_t DiedAt;
   int DeathCount;
+  int Health;
+  int MaxHealth;
 };
 
 cJSON * entityToJSON(entity* Entity) {
@@ -36,6 +38,8 @@ cJSON * entityToJSON(entity* Entity) {
   cJSON_AddItemToObject(jEntity, "id", cJSON_CreateNumber(Entity->Id));
   cJSON_AddItemToObject(jEntity, "type", cJSON_CreateNumber(Entity->Type));
   cJSON_AddItemToObject(jEntity, "deathCount", cJSON_CreateNumber(Entity->DeathCount));
+  cJSON_AddItemToObject(jEntity, "health", cJSON_CreateNumber(Entity->Health));
+  cJSON_AddItemToObject(jEntity, "maxHealth", cJSON_CreateNumber(Entity->MaxHealth));
   cJSON_AddItemToObject(jEntity, "dead", cJSON_CreateBool(Entity->Dead));
   cJSON_AddItemToObject(jEntity, "location", locationToJSON(&(Entity->Location)));
   if (strlen(Entity->Name) > 0) {
@@ -44,7 +48,7 @@ cJSON * entityToJSON(entity* Entity) {
   return jEntity;
 }
 
-internal bool killPlayer(entity* Player) {
+internal bool killEntity(entity* Player) {
   timeval CurrentTime;
   gettimeofday(&CurrentTime,NULL);
   bool DidSomething = false;
@@ -55,6 +59,32 @@ internal bool killPlayer(entity* Player) {
     DidSomething = true;
   }
   return DidSomething;
+}
+
+internal bool reviveEntity(entity* Entity) {
+  if (Entity->Dead) {
+    Entity->Location.X = 1;
+    Entity->Location.Y = 1;
+    Entity->Dead = false;
+    if (Entity->MaxHealth > 0) {
+      Entity->Health = Entity->MaxHealth;
+    }
+    return true;
+  }
+  return false;
+}
+
+// returns true if damage was dealt and kills them if they reached 0 health
+internal bool damageEntity(entity* Entity, int Dmg) {
+  if (Entity != NULL && Entity->Health >= 0) {
+    Entity->Health -= Dmg;
+    if (Entity->Health <= 0) {
+      killEntity(Entity);
+    }
+    // later there might be shields which negate the damage or something
+    return true;
+  }
+  return false;
 }
 
 #define FLOOR_NULL 0
@@ -237,6 +267,8 @@ entity* createPlayer(world* World, char Name[32]) {
       World->Entities[i].Location.X = 3;
       World->Entities[i].Location.Y = 3;
       World->Entities[i].Location.RoomId = 1;
+      World->Entities[i].Health = 10;
+      World->Entities[i].MaxHealth = 10;
       Result = &(World->Entities[i]);
       printf("player created: %s\n",Result->Name);
       i = MAX_ENTITIES; // exit loop
@@ -299,18 +331,19 @@ internal bool processInput(user_input *Input, world* World) {
           DidSomething = true;
         }
       } else if (Input->Text[i] == 'P') { //punch
+#define PUNCH_DMG 2
         entity* OpponentN = findPlayer(World, Room->Id, UserEntity->Location.X, UserEntity->Location.Y-1);
         entity* OpponentS = findPlayer(World, Room->Id, UserEntity->Location.X, UserEntity->Location.Y+1);
         entity* OpponentE = findPlayer(World, Room->Id, UserEntity->Location.X+1, UserEntity->Location.Y);
         entity* OpponentW = findPlayer(World, Room->Id, UserEntity->Location.X-1, UserEntity->Location.Y);
         if (OpponentN != NULL) { // north
-          DidSomething = killPlayer(OpponentN);
+          DidSomething = damageEntity(OpponentN, PUNCH_DMG);
         } else if (OpponentS != NULL) {//south
-          DidSomething = killPlayer(OpponentS);
+          DidSomething = damageEntity(OpponentS, PUNCH_DMG);
         } else if (OpponentE != NULL) {//east
-          DidSomething = killPlayer(OpponentE);
+          DidSomething = damageEntity(OpponentE, PUNCH_DMG);
         } else if (OpponentW != NULL) {//west
-          DidSomething = killPlayer(OpponentW);
+          DidSomething = damageEntity(OpponentW, PUNCH_DMG);
         }
       } else if (Input->Text[i] == 'F') { //fire
 #define FIRE_INPUT_COORD_LEN 4
@@ -374,15 +407,12 @@ internal void* gameLoop(void*args) {
           DidSomething = true;
         }
         entity* OverlappingPlayer = findPlayer(World, Entity->Location);
-        killPlayer(OverlappingPlayer);
+        DidSomething = damageEntity(OverlappingPlayer, 1);
       }
 
       if (Entity->Type == PLAYER_ENTITY) {
         if (Entity->Dead && LoopStartTime.tv_sec > (Entity->DiedAt + 10)) {
-          Entity->Location.X = 1;
-          Entity->Location.Y = 1;
-          Entity->Dead = false;
-          DidSomething = true;
+          DidSomething = reviveEntity(Entity);
         }
       }
     }

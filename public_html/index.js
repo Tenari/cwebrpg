@@ -78,6 +78,10 @@ function redraw() {
       ctx.fillStyle = '#00ff00';
     }
     ctx.fillRect(e.location.x*factor, e.location.y * factor, factor, factor);
+    if (e.health > 0) {
+      ctx.fillStyle = 'red';
+      ctx.fillRect(e.location.x*factor, e.location.y * factor, (e.health / e.maxHealth) * factor, 1);
+    }
   })
   if (localState.mode == 'cast') {
     ctx.beginPath();
