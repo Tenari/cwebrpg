@@ -407,12 +407,12 @@ internal void* gameLoop(void*args) {
           DidSomething = true;
         }
         entity* OverlappingPlayer = findPlayer(World, Entity->Location);
-        DidSomething = damageEntity(OverlappingPlayer, 1);
+        DidSomething = DidSomething || damageEntity(OverlappingPlayer, 1);
       }
 
       if (Entity->Type == PLAYER_ENTITY) {
         if (Entity->Dead && LoopStartTime.tv_sec > (Entity->DiedAt + 10)) {
-          DidSomething = reviveEntity(Entity);
+          DidSomething = DidSomething || reviveEntity(Entity);
         }
       }
     }
