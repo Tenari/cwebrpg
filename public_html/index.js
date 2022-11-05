@@ -31,6 +31,23 @@ var localState = {
 var room = {};
 var world = {};
 var TYPES = [0, "player", "exit", 'fireball'];
+const SPELL_KEYS = [0,'fireball', 'firestream', 'inferno'];
+const SPELLS = {
+  fireball: {
+    name: 'Fireball',
+    desc: 'target one space at arbitrary distance to fill with fire',
+  },
+  firestream: {
+    name: 'Firestream',
+    desc: 'target one cardinal direction to fill with fire for 5 spaces',
+    distance: 5,
+  },
+  inferno: {
+    name: 'Inferno',
+    desc: 'fill all adjacent spaces to you for 2 spaces with fire',
+    distance: 5,
+  },
+};
 function redraw() {
   const factor = 20;
 
@@ -38,6 +55,9 @@ function redraw() {
   ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
 
   const player = getUserPlayer();
+  if (player.availableSpells && player.availableSpells.length > 0) {
+    return drawSpellMenu(player);
+  }
 
   // draw room
   if (room && room.width && room.height && room.id == player.location.roomid) {
@@ -84,15 +104,33 @@ function redraw() {
     }
   })
   if (localState.mode == 'cast') {
-    ctx.beginPath();
-    ctx.lineWidth = "2";
-    ctx.strokeStyle = "red";
-    ctx.rect(localState.cursor.x * factor, localState.cursor.y * factor, factor, factor);
-    ctx.stroke();
-    drawText(ctx, "Casting Fireball...", 9*factor, 1 * factor, "red", "20px Courier New");
+    if (SPELL_KEYS[player.knownSpells[0]] == 'fireball') {
+      drawEmptyBox(ctx, localState.cursor.x * factor, localState.cursor.y * factor, factor, factor);
+      drawText(ctx, "Casting Fireball...", 9*factor, 1 * factor, "red", "20px Courier New");
+    } else if (SPELL_KEYS[player.knownSpells[0]] == 'firestream') {
+      const streamWidth = localState.cursor.y != player.location.y ? 1 : SPELLS.firestream.distance;
+      const streamHeight = streamWidth == 1 ? SPELLS.firestream.distance : 1;
+      drawEmptyBox(ctx, localState.cursor.x * factor, localState.cursor.y * factor, streamWidth * factor, streamHeight * factor);
+      drawText(ctx, "Casting Firestream...", 9*factor, 1 * factor, "red", "20px Courier New");
+    } else if (SPELL_KEYS[player.knownSpells[0]] == 'inferno') {
+      drawEmptyBox(ctx, (localState.cursor.x-2) * factor, (localState.cursor.y-2) * factor, SPELLS.inferno.distance*factor, SPELLS.inferno.distance*factor);
+      drawText(ctx, "Casting Inferno...", 9*factor, 1 * factor, "red", "20px Courier New");
+    }
   }
 }
 
+function drawEmptyBox(ctx, x, y, width, height, color, lineWidth) {
+  ctx.beginPath();
+  ctx.lineWidth = lineWidth || "2";
+  ctx.strokeStyle = color || "red";
+  ctx.rect(x, y, width, height);
+  ctx.stroke();
+}
+function drawTile(ctx, x, y, size, color) {
+  color = color || "#000000";
+  ctx.fillStyle = color;
+  ctx.fillRect(x, y, size, size);
+}
 function drawText(ctx, text, x, y, color, font) {
   font = font || "12px Courier New";
   color = color || "#000000";
@@ -101,10 +139,57 @@ function drawText(ctx, text, x, y, color, font) {
   ctx.font = font;
   ctx.fillText(text,x,y);
 }
-function drawTile(ctx, x, y, size, color) {
-  color = color || "#000000";
-  ctx.fillStyle = color;
-  ctx.fillRect(x, y, size, size);
+function getTextLines(ctx, text, maxWidth, font) {
+  font = font || "12px Courier New";
+  ctx.font = font;
+  var words = text.split(" ");
+  var lines = [];
+  var currentLine = words[0];
+
+  for (var i = 1; i < words.length; i++) {
+    var word = words[i];
+    var width = ctx.measureText(currentLine + " " + word).width;
+    if (width < maxWidth) {
+        currentLine += " " + word;
+    } else {
+        lines.push(currentLine);
+        currentLine = word;
+    }
+  }
+  lines.push(currentLine);
+  return lines;
+}
+function drawSpellMenu(player) {
+  if (localState.mode != "menu") {
+    localState.mode = "menu";
+    localState.menuCode = 'L'; // learn
+    localState.menuPos = 0;
+  }
+  const margin = 50;
+  const fontSize = 20;
+  const font = fontSize + 'px Courier New';
+  drawText(ctx, "Select which spell to learn:", margin, margin+fontSize, 'black', font);
+  let yPos = 25;
+  localState.menu = [];
+  player.availableSpells.forEach(s => {
+    let menuBox = {x: margin+10, width: CANVAS_WIDTH-(margin*2), y: yPos+margin};
+    const key = SPELL_KEYS[s];
+    const spell = SPELLS[key];
+    drawText(ctx, spell.name+':', margin+10, margin+fontSize+yPos, 'black', font);
+    yPos += (fontSize+5);
+    const descFontSize = 16;
+    const descFont = descFontSize + 'px Courier New';
+    getTextLines(ctx, spell.desc, CANVAS_WIDTH-(margin*2), descFont).forEach(line => {
+      drawText(ctx, line, margin+20, margin+descFontSize+yPos, 'black', descFont);
+      yPos += (fontSize+3);
+    })
+    menuBox.height = yPos+margin - menuBox.y;
+    localState.menu.push(menuBox);
+  });
+
+  const current = localState.menu[localState.menuPos];
+  drawEmptyBox(ctx, current.x, current.y, current.width, current.height);
+  localState.menuResult = localState.menuCode +' '+(player.availableSpells[localState.menuPos]);
 }
 
 function getUserPlayer(){
@@ -120,6 +205,11 @@ function toggleInputMode() {
       x: player.location.x,
       y: player.location.y
     };
+    localState.spell = SPELL_KEYS[player.knownSpells[0]];
+    localState.spellKey = player.knownSpells[0];
+    if (localState.spell == 'firestream') {
+      localState.cursor.y -= SPELLS.firestream.distance;
+    }
   } else {
     localState.cursor = null;
   }
@@ -194,8 +284,8 @@ function deleteCookie(name) {
   document.cookie = name+"=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/"
 }
 function createUser() {
-  let username = prompt("Please enter your name:", "");
-  if (username != "" && username != null) {
+  let username = prompt("Please enter your name less than 32 characters:", "");
+  if (username != "" && username != null && username.length < 32) {
     username = username.trim();
     setCookie("username", username);
   } else {
@@ -210,18 +300,55 @@ function handleCursorMove(e) {
   if (localState.mode == 'cast') {
     const dir = VALID_INPUT[e.code];
     if (dir) {
+      if (localState.spell == 'fireball') {
+        switch(dir){
+          case 'N':
+            localState.cursor.y -= 1;
+            break;
+          case 'S':
+            localState.cursor.y += 1;
+            break;
+          case 'E':
+            localState.cursor.x += 1;
+            break;
+          case 'W':
+            localState.cursor.x -= 1;
+            break;
+        }
+      } else if (localState.spell == 'firestream') {
+        const player = getUserPlayer();
+        switch(dir){
+          case 'N':
+            localState.cursor.y = player.location.y - SPELLS.firestream.distance;
+            localState.cursor.x = player.location.x;
+            break;
+          case 'S':
+            localState.cursor.y = player.location.y + 1;
+            localState.cursor.x = player.location.x;
+            break;
+          case 'E':
+            localState.cursor.x = player.location.x + 1;
+            localState.cursor.y = player.location.y;
+            break;
+          case 'W':
+            localState.cursor.x = player.location.x - SPELLS.firestream.distance;
+            localState.cursor.y = player.location.y;
+            break;
+        }
+      }
+      redraw();
+    }
+  } else if (localState.mode == 'menu') {
+    const dir = VALID_INPUT[e.code];
+    if (dir) {
       switch(dir){
         case 'N':
-          localState.cursor.y -= 1;
+          localState.menuPos -= 1;
+          if (localState.menuPos < 0) localState.menuPos = localState.menu.length - 1;
           break;
         case 'S':
-          localState.cursor.y += 1;
-          break;
-        case 'E':
-          localState.cursor.x += 1;
-          break;
-        case 'W':
-          localState.cursor.x -= 1;
+          localState.menuPos += 1;
+          if (localState.menuPos >= localState.menu.length) localState.menuPos = 0;
           break;
       }
       redraw();
@@ -262,15 +389,19 @@ document.addEventListener("DOMContentLoaded", () => {
     handleCursorMove(e);
   })
   document.addEventListener("keyup", (e) => {
-    //console.log(e.code);
     if (localState.mode == "move") {
       if (VALID_INPUT[e.code]) {
         ws.send(VALID_INPUT[e.code]);
       }
     } else if (localState.mode == 'cast') {
       if (e.code == 'Enter') {
-        ws.send('F '+localState.cursor.x+" "+localState.cursor.y);
+        ws.send('C '+localState.spellKey+' '+localState.cursor.x+" "+localState.cursor.y);
         toggleInputMode();
+      }
+    } else if (localState.mode == 'menu') {
+      if (e.code == 'Enter') {
+        ws.send(localState.menuResult);
+        localState.mode = 'move';
       }
     }
     if (e.code == 'KeyQ') { //toggle mode

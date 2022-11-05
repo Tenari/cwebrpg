@@ -21,6 +21,13 @@ internal void clearUString(uchar *str, int len) {
   }
 }
 
+internal void clearUshortArr(ushort *arr, int len) {
+  for (int i = 0; i < len; i++) {
+    arr[i] = 0;
+  }
+}
+
+
 // copy str into str2
 internal void copyUString(uchar *str, uchar *str2, int len) {
   for (int i = 0; i < len; i++) {
@@ -71,11 +78,36 @@ internal bool stringsMatch(char*str1, char*str2) {
 
 internal int parseIntFromCharStar(char* Str, int Len) {
   int Result = 0;
+  bool Negative = false;
+  for (int i=0; i < Len; i++) {
+    if (Str[i] == '-') {
+      Negative = true;
+    } else if (Str[i] == '\0' || Str[i] == ' ' || Str[i] > '9' || Str[i] < '0') {
+      break;
+    } else {
+      Result = (Result * 10) + (Str[i] - '0');
+    }
+  }
+  return Negative ? (-1*Result) : Result;
+}
+
+internal ushort parseUshortFromCharStar(char* Str, int Len) {
+  ushort Result = 0;
   for (int i=0; i < Len; i++) {
     if (Str[i] == '\0' || Str[i] == ' ' || Str[i] > '9' || Str[i] < '0') {
       break;
     }
     Result = (Result * 10) + (Str[i] - '0');
+  }
+  return Result;
+}
+
+internal bool ushortArrIsEmpty(ushort* Arr, int Len){
+  bool Result = true;
+  for (int i=0; i < Len; i++) {
+    if (Arr[i] != 0) {
+      return false;
+    }
   }
   return Result;
 }

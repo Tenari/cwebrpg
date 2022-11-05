@@ -318,9 +318,11 @@ internal void *updateLongRunningHTTPStreams(void *arg) {
 }
 
 internal void writeAndFreeToWebsocket(int Socket, uchar* Message) {
-  uchar Buffer[2048];
-  clearUString(Buffer, 2048);
-  uint64_t bytes = websocket_server_wrap((void *)Buffer, (void *)Message, (uint64_t)strlen((char*)Message), (uchar) 1, (uchar) 1, (uchar) 1, (uchar) 0);
+  uint64_t MsgLen = (uint64_t)strlen((char*)Message);
+  assert(MsgLen < 4096);
+  uchar Buffer[4096];
+  clearUString(Buffer, 4096);
+  uint64_t bytes = websocket_server_wrap((void *)Buffer, (void *)Message, MsgLen, (uchar) 1, (uchar) 1, (uchar) 1, (uchar) 0);
   free(Message);
   send(Socket, Buffer, bytes, 0);
 }

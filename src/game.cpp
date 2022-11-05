@@ -31,19 +31,46 @@ struct entity {
   int DeathCount;
   int Health;
   int MaxHealth;
+#define AVAILABLE_SPELLS_MAX 32
+  ushort AvailableSpells[AVAILABLE_SPELLS_MAX];
+#define KNOWN_SPELLS_MAX 128
+  ushort KnownSpells[KNOWN_SPELLS_MAX];
 };
+#define FIREBALL_SPELL 1
+#define FIRESTREAM_SPELL 2
+#define INFERNO_SPELL 3
 
 cJSON * entityToJSON(entity* Entity) {
   cJSON *jEntity = cJSON_CreateObject();
   cJSON_AddItemToObject(jEntity, "id", cJSON_CreateNumber(Entity->Id));
   cJSON_AddItemToObject(jEntity, "type", cJSON_CreateNumber(Entity->Type));
-  cJSON_AddItemToObject(jEntity, "deathCount", cJSON_CreateNumber(Entity->DeathCount));
-  cJSON_AddItemToObject(jEntity, "health", cJSON_CreateNumber(Entity->Health));
-  cJSON_AddItemToObject(jEntity, "maxHealth", cJSON_CreateNumber(Entity->MaxHealth));
-  cJSON_AddItemToObject(jEntity, "dead", cJSON_CreateBool(Entity->Dead));
+  if (Entity->DeathCount)
+    cJSON_AddItemToObject(jEntity, "deathCount", cJSON_CreateNumber(Entity->DeathCount));
+  if (Entity->Health)
+    cJSON_AddItemToObject(jEntity, "health", cJSON_CreateNumber(Entity->Health));
+  if (Entity->MaxHealth)
+    cJSON_AddItemToObject(jEntity, "maxHealth", cJSON_CreateNumber(Entity->MaxHealth));
+  if (Entity->Dead)
+    cJSON_AddItemToObject(jEntity, "dead", cJSON_CreateBool(Entity->Dead));
   cJSON_AddItemToObject(jEntity, "location", locationToJSON(&(Entity->Location)));
   if (strlen(Entity->Name) > 0) {
     cJSON_AddItemToObject(jEntity, "name", cJSON_CreateString(Entity->Name));
+  }
+  if (!ushortArrIsEmpty(Entity->AvailableSpells, AVAILABLE_SPELLS_MAX)){
+    cJSON *spells_arr = cJSON_CreateArray();
+    for (int i = 0; i < AVAILABLE_SPELLS_MAX; ++i) {
+      if (Entity->AvailableSpells[i])
+        cJSON_AddItemToArray(spells_arr, cJSON_CreateNumber(Entity->AvailableSpells[i]));
+    }
+    cJSON_AddItemToObject(jEntity, "availableSpells", spells_arr);
+  }
+  if (!ushortArrIsEmpty(Entity->KnownSpells, AVAILABLE_SPELLS_MAX)){
+    cJSON *spells_arr = cJSON_CreateArray();
+    for (int i = 0; i < KNOWN_SPELLS_MAX; ++i) {
+      if (Entity->KnownSpells[i])
+        cJSON_AddItemToArray(spells_arr, cJSON_CreateNumber(Entity->KnownSpells[i]));
+    }
+    cJSON_AddItemToObject(jEntity, "knownSpells", spells_arr);
   }
   return jEntity;
 }
@@ -87,6 +114,26 @@ internal bool damageEntity(entity* Entity, int Dmg) {
   return false;
 }
 
+//currently, this always clears the AvailableSpells if the spell is actually valid/learned
+internal bool learnSpell(entity* Entity, ushort SpellKey) {
+  bool DidSomething = false;
+  bool KeyIsValid = false;
+  for (int i = 0; i < AVAILABLE_SPELLS_MAX; ++i) {
+    if (Entity->AvailableSpells[i] == SpellKey)
+      KeyIsValid = true;
+  }
+  if (KeyIsValid) {
+    for (int i = 0; i < KNOWN_SPELLS_MAX; ++i) {
+      if (Entity->KnownSpells[i] == 0) {
+        Entity->KnownSpells[i] = SpellKey;
+        clearUshortArr(Entity->AvailableSpells, AVAILABLE_SPELLS_MAX);
+        DidSomething = true;
+        break;
+      }
+    }
+  }
+  return DidSomething;
+}
 #define FLOOR_NULL 0
 #define FLOOR_GRASS 1
 #define FLOOR_STONE 2
@@ -98,7 +145,7 @@ struct room {
   uchar Floor[MAX_ROOM_DIMENSION][MAX_ROOM_DIMENSION];
 };
 
-#define MAX_ENTITIES 100
+#define MAX_ENTITIES 512
 #define MAX_PLAYERS 10
 #define ROOM_COUNT 1
 struct world {
@@ -249,7 +296,7 @@ entity* createFireball(world* World, uint X, uint Y, uint RoomId) {
       World->Entities[i].Location.RoomId = RoomId;
 
       Result = &(World->Entities[i]);
-      printf("fireball created: (%d, %d)\n",Result->Location.X, Result->Location.Y);
+//      printf("fireball created: (%d, %d)\n",Result->Location.X, Result->Location.Y);
       i = MAX_ENTITIES; // exit loop
     }
   }
@@ -269,6 +316,9 @@ entity* createPlayer(world* World, char Name[32]) {
       World->Entities[i].Location.RoomId = 1;
       World->Entities[i].Health = 10;
       World->Entities[i].MaxHealth = 10;
+      World->Entities[i].AvailableSpells[0] = 1;
+      World->Entities[i].AvailableSpells[1] = 2;
+      World->Entities[i].AvailableSpells[2] = 3;
       Result = &(World->Entities[i]);
       printf("player created: %s\n",Result->Name);
       i = MAX_ENTITIES; // exit loop
@@ -345,33 +395,71 @@ internal bool processInput(user_input *Input, world* World) {
         } else if (OpponentW != NULL) {//west
           DidSomething = damageEntity(OpponentW, PUNCH_DMG);
         }
-      } else if (Input->Text[i] == 'F') { //fire
-#define FIRE_INPUT_COORD_LEN 4
-        char XAsStr[FIRE_INPUT_COORD_LEN] = {0,0,0,0};
-        char YAsStr[FIRE_INPUT_COORD_LEN] = {0,0,0,0};
-        bool OnX = true;
+      } else if (Input->Text[i] == 'C') { //cast
+        // expected format: 'C SpellKey X Y'
+#define SPELL_INPUT_PARAM_LEN 4
+        char Params[3][SPELL_INPUT_PARAM_LEN] = {
+          {0,0,0,0},
+          {0,0,0,0},
+          {0,0,0,0}
+        };
+        ushort ParamIndex = 0;
         ushort StrIndex = 0;
-        //start j=2 because 0='F' and 1=' ' and 2 is where the number starts
+        //start j=2 because 0='C' and 1=' ' and 2 is where the numbers start
         for (int j=2; j+i < MAX_USER_INPUT_LEN; j++) { 
           if (Input->Text[i+j] == '\0') {
             break;
           }
           if (Input->Text[i+j] == ' ') {
-            OnX = false;
+            ParamIndex += 1;
             StrIndex = 0;
           } else {
-            if (OnX) {
-              XAsStr[StrIndex] = Input->Text[i+j];
-            } else {
-              YAsStr[StrIndex] = Input->Text[i+j];
-            }
+            Params[ParamIndex][StrIndex] = Input->Text[i+j];
             StrIndex ++;
           }
         }
-        int X = parseIntFromCharStar(XAsStr, FIRE_INPUT_COORD_LEN);
-        int Y = parseIntFromCharStar(YAsStr, FIRE_INPUT_COORD_LEN);
-        createFireball(World, X, Y, UserEntity->Location.RoomId);
-        DidSomething = true;
+        ushort SpellKey = parseUshortFromCharStar(Params[0], SPELL_INPUT_PARAM_LEN);
+        int X = parseIntFromCharStar(Params[1], SPELL_INPUT_PARAM_LEN);
+        int Y = parseIntFromCharStar(Params[2], SPELL_INPUT_PARAM_LEN);
+        if (SpellKey == FIREBALL_SPELL) {
+          DidSomething = DidSomething || (createFireball(World, X, Y, UserEntity->Location.RoomId) != NULL);
+        } else if (SpellKey == FIRESTREAM_SPELL) {
+          //detect intended firestream direction
+          bool HorizontalFirestream = true;
+          if (X == UserEntity->Location.X) { // vertical firestream
+            HorizontalFirestream = false;
+          }
+          for (int k = 0; k < 5; k++) {
+            int UseX = HorizontalFirestream ? X+k : X;
+            int UseY = HorizontalFirestream ? Y : Y+k;
+            if (UseX < 0 || UseY < 0) 
+              continue;
+            bool MadeFire = createFireball(World, UseX, UseY,UserEntity->Location.RoomId) != NULL;
+            DidSomething = DidSomething || MadeFire;
+          }
+        } else if (SpellKey == INFERNO_SPELL) {
+          for (int k = -2; k < 3; k++) {
+            for (int l = -2; l < 3; l++) {
+              if (X+k < 0 || Y+l < 0 || (k==0 && l==0)) 
+                continue;
+              bool MadeFire = createFireball(World, X+k, Y+l, UserEntity->Location.RoomId) != NULL;
+              DidSomething = DidSomething || MadeFire;
+            }
+          }
+        }
+      } else if (Input->Text[i] == 'L') { //learn (spell)
+        char SpellKeyAsStr[SPELL_INPUT_PARAM_LEN] = {0,0,0,0};
+        ushort StrIndex = 0;
+        //start j=2 because 0='L' and 1=' ' and 2 is where the number starts
+        for (int j=2; j+i < MAX_USER_INPUT_LEN; j++) { 
+          if (Input->Text[i+j] == '\0') {
+            break;
+          }
+          SpellKeyAsStr[StrIndex] = Input->Text[i+j];
+          StrIndex ++;
+        }
+        ushort SpellKey = parseUshortFromCharStar(SpellKeyAsStr, SPELL_INPUT_PARAM_LEN);
+        DidSomething = learnSpell(UserEntity, SpellKey);
       }
     }
   }
@@ -395,7 +483,7 @@ internal void* gameLoop(void*args) {
     bool DidSomething = false;
     // operate on user inputs
     for (int i = 0; i < MAX_PLAYERS; i++) {
-      DidSomething = DidSomething || processInput(&(World->Inputs[i]), World);
+      DidSomething = processInput(&(World->Inputs[i]), World) || DidSomething;
     }
     
     // process other entities
@@ -407,12 +495,12 @@ internal void* gameLoop(void*args) {
           DidSomething = true;
         }
         entity* OverlappingPlayer = findPlayer(World, Entity->Location);
-        DidSomething = DidSomething || damageEntity(OverlappingPlayer, 1);
+        DidSomething = damageEntity(OverlappingPlayer, 1) || DidSomething;
       }
 
       if (Entity->Type == PLAYER_ENTITY) {
         if (Entity->Dead && LoopStartTime.tv_sec > (Entity->DiedAt + 10)) {
-          DidSomething = DidSomething || reviveEntity(Entity);
+          DidSomething = reviveEntity(Entity) || DidSomething;
         }
       }
     }
