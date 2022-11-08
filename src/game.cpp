@@ -31,6 +31,8 @@ struct entity {
   int DeathCount;
   int Health;
   int MaxHealth;
+  ushort MoveFrame;
+  location MoveGoal;
 #define AVAILABLE_SPELLS_MAX 32
   ushort AvailableSpells[AVAILABLE_SPELLS_MAX];
 #define KNOWN_SPELLS_MAX 128
@@ -52,6 +54,10 @@ cJSON * entityToJSON(entity* Entity) {
     cJSON_AddItemToObject(jEntity, "maxHealth", cJSON_CreateNumber(Entity->MaxHealth));
   if (Entity->Dead)
     cJSON_AddItemToObject(jEntity, "dead", cJSON_CreateBool(Entity->Dead));
+  if (Entity->MoveFrame > 0) {
+    cJSON_AddItemToObject(jEntity, "moveFrame", cJSON_CreateNumber(Entity->MoveFrame));
+    cJSON_AddItemToObject(jEntity, "moveGoal", locationToJSON(&(Entity->MoveGoal)));
+  }
   cJSON_AddItemToObject(jEntity, "location", locationToJSON(&(Entity->Location)));
   if (strlen(Entity->Name) > 0) {
     cJSON_AddItemToObject(jEntity, "name", cJSON_CreateString(Entity->Name));
@@ -341,6 +347,46 @@ internal char* printVisibleWorldState(world *World, char Name[32]) {
   return Result;
 }
 
+#define PLAYER_MOVE_FRAMES 30
+internal bool tryToStartMovingPlayer(entity* Player, room* Room, char Direction) {
+  if (Player->MoveFrame > 0) return false; // already moving
+
+  bool DidSomething = false;
+  if (Direction == 'N') {        //north
+    if (Player->Location.Y > 0) {
+      Player->MoveFrame = 1;
+      Player->MoveGoal.X = Player->Location.X;
+      Player->MoveGoal.Y = Player->Location.Y - 1;
+      Player->MoveGoal.RoomId = Player->Location.RoomId;
+      DidSomething = true;
+    }
+  } else if (Direction == 'S') { //south
+    if (Player->Location.Y < (Room->Height-1)) {
+      Player->MoveFrame = 1;
+      Player->MoveGoal.X = Player->Location.X;
+      Player->MoveGoal.Y = Player->Location.Y + 1;
+      Player->MoveGoal.RoomId = Player->Location.RoomId;
+      DidSomething = true;
+    }
+  } else if (Direction == 'E') { //east
+    if (Player->Location.X < (Room->Width-1)) {
+      Player->MoveFrame = 1;
+      Player->MoveGoal.X = Player->Location.X + 1;
+      Player->MoveGoal.Y = Player->Location.Y;
+      Player->MoveGoal.RoomId = Player->Location.RoomId;
+      DidSomething = true;
+    }
+  } else if (Direction == 'W') { //west
+    if (Player->Location.X > 0) {
+      Player->MoveFrame = 1;
+      Player->MoveGoal.X = Player->Location.X - 1;
+      Player->MoveGoal.Y = Player->Location.Y;
+      Player->MoveGoal.RoomId = Player->Location.RoomId;
+      DidSomething = true;
+    }
+  }
+  return DidSomething;
+}
 // returns true if it changed the world in some way
 internal bool processInput(user_input *Input, world* World) {
   if (Input->Text[0] == '\0') return false;
@@ -360,27 +406,9 @@ internal bool processInput(user_input *Input, world* World) {
     if (Input->Text[i] == '\0') {
       i = 32;
     } else {
-      if (Input->Text[i] == 'N') {        //north
-        if (UserEntity->Location.Y > 0) {
-          UserEntity->Location.Y -= 1;
-          DidSomething = true;
-        }
-      } else if (Input->Text[i] == 'S') { //south
-        if (UserEntity->Location.Y < (Room->Height-1)) {
-          UserEntity->Location.Y += 1;
-          DidSomething = true;
-        }
-      } else if (Input->Text[i] == 'E') { //east
-        if (UserEntity->Location.X < (Room->Width-1)) {
-          UserEntity->Location.X += 1;
-          DidSomething = true;
-        }
-      } else if (Input->Text[i] == 'W') { //west
-        if (UserEntity->Location.X > 0) {
-          UserEntity->Location.X -= 1;
-          DidSomething = true;
-        }
-      } else if (Input->Text[i] == 'P') { //punch
+      DidSomething = tryToStartMovingPlayer(UserEntity, Room, Input->Text[i]) || DidSomething;
+
+      if (Input->Text[i] == 'P') { //punch
 #define PUNCH_DMG 2
         entity* OpponentN = findPlayer(World, Room->Id, UserEntity->Location.X, UserEntity->Location.Y-1);
         entity* OpponentS = findPlayer(World, Room->Id, UserEntity->Location.X, UserEntity->Location.Y+1);
@@ -501,6 +529,17 @@ internal void* gameLoop(void*args) {
       if (Entity->Type == PLAYER_ENTITY) {
         if (Entity->Dead && LoopStartTime.tv_sec > (Entity->DiedAt + 10)) {
           DidSomething = reviveEntity(Entity) || DidSomething;
+        }
+        if (Entity->MoveFrame > 0) {
+          if (Entity->MoveFrame < PLAYER_MOVE_FRAMES) {
+            Entity->MoveFrame += 1;
+          } else {
+            Entity->MoveFrame = 0;
+            Entity->Location.X = Entity->MoveGoal.X;
+            Entity->Location.Y = Entity->MoveGoal.Y;
+            Entity->Location.RoomId = Entity->MoveGoal.RoomId;
+            DidSomething = true;
+          }
         }
       }
     }

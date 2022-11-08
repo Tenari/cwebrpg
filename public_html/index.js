@@ -4,9 +4,10 @@ function getRandomInt(min, max) {
   return Math.floor(Math.random() * (max - min) + min); // The maximum is exclusive and the minimum is inclusive
 }
 const CANVAS_WIDTH = 800;
-const CANVAS_HEIGHT = 600;
+const CANVAS_HEIGHT = 608;
 const FLOORS = [null, 'grass', 'stone'];
 const GRASS_COLORS = ['#3b680d', '#3b680d', '#3b680d', '#68680d','#68680d', '#0d680d'];
+const MOVE_FRAMES = 30;
 let GRASS_ORDER = [];
 (() => {
   for (let i = 0; i<100; i++) {
@@ -27,6 +28,9 @@ let ctx, username, image;
 var localState = {
   mode: "move",
   cursor: null,
+  moving: {
+  },
+  retriggering: false,
 };
 var room = {};
 var world = {};
@@ -82,17 +86,44 @@ function redraw() {
     }
   }
 
+  let reTrigger = false;
   world.entities.forEach(e => {
     if(TYPES[e.type] == "player") {
+      let dx = e.location.x*factor;
+      let dy = e.location.y*factor;
+      if (e.moveFrame && e.moveFrame > 0) {
+        if (!localState.moving[e.id]) {
+          localState.moving[e.id] = e.moveFrame;
+        }
+        if (localState.moving[e.id] < MOVE_FRAMES) {
+          reTrigger = true;
+        }
+        const offset = (localState.moving[e.id] / MOVE_FRAMES) * factor;
+        if (e.moveGoal.x > e.location.x) {
+          dx += offset;
+        } else if (e.moveGoal.x < e.location.x) {
+          dx -= offset;
+        } else if (e.moveGoal.y > e.location.y) {
+          dy += offset;
+        } else if (e.moveGoal.y < e.location.y) {
+          dy -= offset;
+        }
+      } else {
+        delete localState.moving[e.id];
+      }
       // print the name
-      drawText(ctx, e.name, e.location.x*factor, e.location.y * factor, "#0000ff");
+      drawText(ctx, e.name, dx, dy, "#0000ff");
       // block color
       if (e.dead) {
         ctx.fillStyle = '#878787';
-        ctx.fillRect(e.location.x*factor, e.location.y * factor, factor, factor);
+        ctx.fillRect(dx, dy, factor, factor);
       } else {
         ctx.fillStyle = '#000000';
-        ctx.drawImage(image,e.location.x*factor, e.location.y*factor, factor, factor);
+        ctx.drawImage(image, dx, dy, factor, factor);
+      }
+      if (e.health > 0) {
+        ctx.fillStyle = 'red';
+        ctx.fillRect(dx, dy, (e.health / e.maxHealth) * factor, 2);
       }
     } else {
       if (TYPES[e.type] == 'fireball'){
@@ -101,10 +132,6 @@ function redraw() {
         ctx.fillStyle = '#00ff00';
       }
       ctx.fillRect(e.location.x*factor, e.location.y * factor, factor, factor);
-    }
-    if (e.health > 0) {
-      ctx.fillStyle = 'red';
-      ctx.fillRect(e.location.x*factor, e.location.y * factor, (e.health / e.maxHealth) * factor, 1);
     }
   })
   if (localState.mode == 'cast') {
@@ -120,6 +147,16 @@ function redraw() {
       drawEmptyBox(ctx, (localState.cursor.x-2) * factor, (localState.cursor.y-2) * factor, SPELLS.inferno.distance*factor, SPELLS.inferno.distance*factor);
       drawText(ctx, "Casting Inferno...", 9*factor, 1 * factor, "red", "20px Courier New");
     }
+  }
+  if (reTrigger && !localState.retriggering) {
+    localState.retriggering = true;
+    window.requestAnimationFrame(() => {
+      for (let k of Object.keys(localState.moving)) {
+        localState.moving[k] += 1;
+      }
+      localState.retriggering = false;
+      redraw();
+    })
   }
 }
 
