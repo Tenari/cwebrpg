@@ -23,7 +23,7 @@ const VALID_INPUT = {
   'KeyA': 'W', //west
   'KeyP': 'P', //punch
 };
-let ctx, username;
+let ctx, username, image;
 var localState = {
   mode: "move",
   cursor: null,
@@ -49,7 +49,7 @@ const SPELLS = {
   },
 };
 function redraw() {
-  const factor = 20;
+  const factor = 32;
 
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
@@ -89,15 +89,19 @@ function redraw() {
       // block color
       if (e.dead) {
         ctx.fillStyle = '#878787';
+        ctx.fillRect(e.location.x*factor, e.location.y * factor, factor, factor);
       } else {
         ctx.fillStyle = '#000000';
+        ctx.drawImage(image,e.location.x*factor, e.location.y*factor, factor, factor);
       }
-    } else if (TYPES[e.type] == 'fireball'){
-      ctx.fillStyle = '#ff0000';
     } else {
-      ctx.fillStyle = '#00ff00';
+      if (TYPES[e.type] == 'fireball'){
+        ctx.fillStyle = '#ff0000';
+      } else {
+        ctx.fillStyle = '#00ff00';
+      }
+      ctx.fillRect(e.location.x*factor, e.location.y * factor, factor, factor);
     }
-    ctx.fillRect(e.location.x*factor, e.location.y * factor, factor, factor);
     if (e.health > 0) {
       ctx.fillStyle = 'red';
       ctx.fillRect(e.location.x*factor, e.location.y * factor, (e.health / e.maxHealth) * factor, 1);
@@ -364,6 +368,12 @@ document.addEventListener("DOMContentLoaded", () => {
   if (username == '') {
     username = createUser();
   }
+
+  image = new Image();
+  image.src = 'wizard.png';
+  //image.onload = function () {
+  //    ctx.drawImage(image,5,5);
+  //};
 
   let ws = new WebSocket("ws://"+window.location.host+"/chat");
 

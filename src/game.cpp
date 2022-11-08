@@ -205,8 +205,8 @@ internal cJSON * roomToJSON(room* Room) {
 
 internal world *setupWorld(world *World) {
   World->Rooms[0].Id = 1;
-  World->Rooms[0].Width = 40;
-  World->Rooms[0].Height = 30;
+  World->Rooms[0].Width = 25;
+  World->Rooms[0].Height = 19;
   for (uchar i = 0; i < World->Rooms[0].Width; i++) {
     for (uchar j = 0; j < World->Rooms[0].Height; j++) {
       World->Rooms[0].Floor[i][j] = FLOOR_GRASS;

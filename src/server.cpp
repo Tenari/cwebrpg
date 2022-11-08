@@ -11,11 +11,13 @@
 #define HEADER_404 "HTTP/1.0 404 Not Found\nServer: C-Serv v0.2\nContent-Type: %s\n\n"
 #define HEADER_WEBSOCKET "HTTP/1.1 101 Switching Protocols\nUpgrade: websocket\nConnection: Upgrade\nSec-WebSocket-Accept: "
 #define CONTENT_JSON "application/json"
+#define CONTENT_PNG "image/png"
 
 global_variable int ListeningSocket;
 
 struct http_request {
 	int ReturnCode;
+  bool IsPng;
 	char *Filename;
 	char *Query;
 	const route *Route;
@@ -147,6 +149,7 @@ internal void serverReadHeaderFromSocket(int fd) {
 
 internal http_request parseRequest(char *Header){
   http_request Request;
+  Request.IsPng = false;
   Request.ReturnCode = 400; // initialize to error code, so we never erroneously return 200-success
   Request.Route = NULL;
   Request.Query = NULL;
@@ -159,9 +162,20 @@ internal http_request parseRequest(char *Header){
   clearString(Query, MAX_PATH_SIZE / sizeof(char));
   clearString(ServerMemory.Path, MAX_PATH_SIZE / sizeof(char));
   sscanf(Header, "GET %s HTTP/1.1", ServerMemory.Path);
+  int PathSize = strlen(ServerMemory.Path);
+
+  if (
+      PathSize >= 4 &&
+      ServerMemory.Path[PathSize-4] == '.' &&
+      ServerMemory.Path[PathSize-3] == 'p' &&
+      ServerMemory.Path[PathSize-2] == 'n' &&
+      ServerMemory.Path[PathSize-1] == 'g'
+     ) {
+    Request.IsPng = true;
+  }
+
   bool FoundQuery = false;
   int qi = 0;
-  int PathSize = strlen(ServerMemory.Path);
   for (int i = 0; i < PathSize; i++) {
     if (FoundQuery) {
       Query[qi] = ServerMemory.Path[i];
@@ -239,53 +253,26 @@ internal int printResponseHeader(int fd, int returncode, const char* contentType
     return -1;
   }
 }
-// returns file size in bytes
-internal int printResponseFile(int fd, char *filename) {
-    /* Open the file filename and echo the contents from it to the file descriptor fd */
+internal void printResponseFile(int Socket, char *filename) {
+    /* Open the file filename and echo the contents from it to the Socket */
     
     // Attempt to open the file 
-    FILE *read;
-    if( (read = fopen(filename, "r")) == NULL)
-   {
-        fprintf(stderr, "Error opening file in printFile()\n");
-        exit(EXIT_FAILURE);
+    int FileDescriptor;
+    if( (FileDescriptor = open(filename, O_RDONLY)) == -1) {
+      fprintf(stderr, "Error opening file in printFile()\n");
+      exit(EXIT_FAILURE);
     }
-    
-    // Get the size of this file for printing out later on
-    int totalsize;
-    struct stat st;
-    stat(filename, &st);
-    totalsize = st.st_size;
-    
-    // Variable for getline to write the size of the line its currently printing to
-    size_t size = 1;
-    
-    // Get some space to store each line of the file in temporarily 
-    char *temp;
-    if(  (temp = (char *)malloc(sizeof(char) * size)) == NULL )
-    {
-        fprintf(stderr, "Error allocating memory to temp in printFile()\n");
-        exit(EXIT_FAILURE);
-    }
-    
-    // Int to keep track of what getline returns
-    int end;
-    
-    // While getline is still getting data
-    while( (end = getline( &temp, &size, read)) > 0)
-    {
-        transmitMessageOverSocket(fd, temp, false);
+
+    char WriteBuffer[1024];
+    int BytesRead = 0;
+    while((BytesRead = read(FileDescriptor, WriteBuffer, sizeof(WriteBuffer))) > 0) {
+      send(Socket, WriteBuffer, BytesRead, 0);
     }
     
     // Final new line
-    transmitMessageOverSocket(fd, (char *)"\n", false);
+    transmitMessageOverSocket(Socket, (char *)"\n", false);
     
-    // Free temp as we no longer need it
-    free(temp);
-    fclose(read);
-    
-    // Return how big the file we sent out was
-    return totalsize;
+    close(FileDescriptor);
 }
 
 // loop through all long-running httpStreams and send new gamestate
@@ -555,7 +542,11 @@ internal void startServer(int Port, int ThreadCount, world *World) {
     // start to respond, with header
     const char * ContentType; // detect ContentType
     if (RequestDetails.Filename != NULL) {
-      ContentType = "text/html";
+      if (RequestDetails.IsPng) {
+        ContentType = CONTENT_PNG;
+      } else {
+        ContentType = "text/html";
+      }
     } else if (RequestDetails.Route && RequestDetails.Route->Slow) {
       ContentType = "text/plain";
     } else {
