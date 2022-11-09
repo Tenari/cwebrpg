@@ -31,6 +31,8 @@ struct entity {
   int DeathCount;
   int Health;
   int MaxHealth;
+  int XP;
+  uint CreatedById; //entity id this entity was created by
   ushort MoveFrame;
   location MoveGoal;
 #define AVAILABLE_SPELLS_MAX 32
@@ -54,6 +56,8 @@ cJSON * entityToJSON(entity* Entity) {
     cJSON_AddItemToObject(jEntity, "maxHealth", cJSON_CreateNumber(Entity->MaxHealth));
   if (Entity->Dead)
     cJSON_AddItemToObject(jEntity, "dead", cJSON_CreateBool(Entity->Dead));
+  if (Entity->XP)
+    cJSON_AddItemToObject(jEntity, "xp", cJSON_CreateNumber(Entity->XP));
   if (Entity->MoveFrame > 0) {
     cJSON_AddItemToObject(jEntity, "moveFrame", cJSON_CreateNumber(Entity->MoveFrame));
     cJSON_AddItemToObject(jEntity, "moveGoal", locationToJSON(&(Entity->MoveGoal)));
@@ -79,45 +83,6 @@ cJSON * entityToJSON(entity* Entity) {
     cJSON_AddItemToObject(jEntity, "knownSpells", spells_arr);
   }
   return jEntity;
-}
-
-internal bool killEntity(entity* Player) {
-  timeval CurrentTime;
-  gettimeofday(&CurrentTime,NULL);
-  bool DidSomething = false;
-  if (Player != NULL && !Player->Dead) {
-    Player->Dead = true;
-    Player->DiedAt = CurrentTime.tv_sec;
-    Player->DeathCount ++;
-    DidSomething = true;
-  }
-  return DidSomething;
-}
-
-internal bool reviveEntity(entity* Entity) {
-  if (Entity->Dead) {
-    Entity->Location.X = 1;
-    Entity->Location.Y = 1;
-    Entity->Dead = false;
-    if (Entity->MaxHealth > 0) {
-      Entity->Health = Entity->MaxHealth;
-    }
-    return true;
-  }
-  return false;
-}
-
-// returns true if damage was dealt and kills them if they reached 0 health
-internal bool damageEntity(entity* Entity, int Dmg) {
-  if (Entity != NULL && Entity->Health >= 0) {
-    Entity->Health -= Dmg;
-    if (Entity->Health <= 0) {
-      killEntity(Entity);
-    }
-    // later there might be shields which negate the damage or something
-    return true;
-  }
-  return false;
 }
 
 //currently, this always clears the AvailableSpells if the spell is actually valid/learned
@@ -286,7 +251,51 @@ entity* findPlayer(world* World, char Name[32]) {
   return Result;
 }
 
-entity* createFireball(world* World, uint X, uint Y, uint RoomId) {
+internal bool killEntity(world* World, entity* Player, uint KillerId) {
+  timeval CurrentTime;
+  gettimeofday(&CurrentTime,NULL);
+  bool DidSomething = false;
+  if (Player != NULL && !Player->Dead) {
+    Player->Dead = true;
+    Player->DiedAt = CurrentTime.tv_sec;
+    Player->DeathCount ++;
+    entity* Killer = findPlayer(World, KillerId);
+    if (Killer != NULL) {
+      Killer->XP += 1;
+    }
+    DidSomething = true;
+  }
+  return DidSomething;
+}
+
+internal bool reviveEntity(entity* Entity) {
+  if (Entity->Dead) {
+    Entity->Location.X = 1;
+    Entity->Location.Y = 1;
+    Entity->Dead = false;
+    if (Entity->MaxHealth > 0) {
+      Entity->Health = Entity->MaxHealth;
+    }
+    return true;
+  }
+  return false;
+}
+
+// returns true if damage was dealt and kills them if they reached 0 health
+internal bool damageEntity(world* World, entity* Entity, int Dmg, uint DamageDealerId) {
+  if (Entity != NULL && Entity->Health >= 0) {
+    Entity->Health -= Dmg;
+    if (Entity->Health <= 0) {
+      killEntity(World, Entity, DamageDealerId);
+    }
+    // later there might be shields which negate the damage or something
+    return true;
+  }
+  return false;
+}
+
+
+entity* createFireball(world* World, uint X, uint Y, uint RoomId, uint CreatorId) {
   entity* Result = NULL;
   for (uint i =0; i < MAX_ENTITIES; i++) {
     // find first empty entity and initialize as fireball
@@ -297,6 +306,7 @@ entity* createFireball(world* World, uint X, uint Y, uint RoomId) {
       World->Entities[i].Id              = i;
       World->Entities[i].Type            = FIREBALL_ENTITY;
       World->Entities[i].CreatedAt       = CurrentTime.tv_sec;
+      World->Entities[i].CreatedById     = CreatorId;
       World->Entities[i].Location.X      = X;
       World->Entities[i].Location.Y      = Y;
       World->Entities[i].Location.RoomId = RoomId;
@@ -415,13 +425,13 @@ internal bool processInput(user_input *Input, world* World) {
         entity* OpponentE = findPlayer(World, Room->Id, UserEntity->Location.X+1, UserEntity->Location.Y);
         entity* OpponentW = findPlayer(World, Room->Id, UserEntity->Location.X-1, UserEntity->Location.Y);
         if (OpponentN != NULL) { // north
-          DidSomething = damageEntity(OpponentN, PUNCH_DMG);
+          DidSomething = damageEntity(World, OpponentN, PUNCH_DMG, UserEntity->Id);
         } else if (OpponentS != NULL) {//south
-          DidSomething = damageEntity(OpponentS, PUNCH_DMG);
+          DidSomething = damageEntity(World, OpponentS, PUNCH_DMG, UserEntity->Id);
         } else if (OpponentE != NULL) {//east
-          DidSomething = damageEntity(OpponentE, PUNCH_DMG);
+          DidSomething = damageEntity(World, OpponentE, PUNCH_DMG, UserEntity->Id);
         } else if (OpponentW != NULL) {//west
-          DidSomething = damageEntity(OpponentW, PUNCH_DMG);
+          DidSomething = damageEntity(World, OpponentW, PUNCH_DMG, UserEntity->Id);
         }
       } else if (Input->Text[i] == 'C') { //cast
         // expected format: 'C SpellKey X Y'
@@ -450,7 +460,7 @@ internal bool processInput(user_input *Input, world* World) {
         int X = parseIntFromCharStar(Params[1], SPELL_INPUT_PARAM_LEN);
         int Y = parseIntFromCharStar(Params[2], SPELL_INPUT_PARAM_LEN);
         if (SpellKey == FIREBALL_SPELL) {
-          DidSomething = DidSomething || (createFireball(World, X, Y, UserEntity->Location.RoomId) != NULL);
+          DidSomething = DidSomething || (createFireball(World, X, Y, UserEntity->Location.RoomId, UserEntity->Id) != NULL);
         } else if (SpellKey == FIRESTREAM_SPELL) {
           //detect intended firestream direction
           bool HorizontalFirestream = true;
@@ -462,7 +472,7 @@ internal bool processInput(user_input *Input, world* World) {
             int UseY = HorizontalFirestream ? Y : Y+k;
             if (UseX < 0 || UseY < 0) 
               continue;
-            bool MadeFire = createFireball(World, UseX, UseY,UserEntity->Location.RoomId) != NULL;
+            bool MadeFire = createFireball(World, UseX, UseY,UserEntity->Location.RoomId, UserEntity->Id) != NULL;
             DidSomething = DidSomething || MadeFire;
           }
         } else if (SpellKey == INFERNO_SPELL) {
@@ -470,7 +480,7 @@ internal bool processInput(user_input *Input, world* World) {
             for (int l = -2; l < 3; l++) {
               if (X+k < 0 || Y+l < 0 || (k==0 && l==0)) 
                 continue;
-              bool MadeFire = createFireball(World, X+k, Y+l, UserEntity->Location.RoomId) != NULL;
+              bool MadeFire = createFireball(World, X+k, Y+l, UserEntity->Location.RoomId, UserEntity->Id) != NULL;
               DidSomething = DidSomething || MadeFire;
             }
           }
@@ -523,7 +533,7 @@ internal void* gameLoop(void*args) {
           DidSomething = true;
         }
         entity* OverlappingPlayer = findPlayer(World, Entity->Location);
-        DidSomething = damageEntity(OverlappingPlayer, 1) || DidSomething;
+        DidSomething = damageEntity(World, OverlappingPlayer, 1, Entity->CreatedById) || DidSomething;
       }
 
       if (Entity->Type == PLAYER_ENTITY) {

@@ -422,6 +422,10 @@ document.addEventListener("DOMContentLoaded", () => {
     // event.data is either a string (if text) or arraybuffer (if binary)
     world = JSON.parse(event.data);
     const player = getUserPlayer();
+    if (player.xp && player.xp > (localState.xp || 0)) {
+      localState.xp = player.xp;
+      document.getElementById("xp").innerHTML = ""+player.xp;
+    }
     if (player.location.roomid != room.id) {
       fetch("/room.json?id="+player.location.roomid).then( (r) => {
         r.json().then((state) => {
